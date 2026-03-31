@@ -16,7 +16,7 @@ ROOT_TTree_Write_ContainerImp::ROOT_TTree_Write_ContainerImp(std::string const& 
 ROOT_TTree_Write_ContainerImp::~ROOT_TTree_Write_ContainerImp()
 {
   if (m_tree != nullptr) {
-    m_tree->Write();
+    m_tree->GetDirectory()->WriteTObject(m_tree);
     delete m_tree;
   }
 }
