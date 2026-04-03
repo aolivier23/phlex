@@ -16,6 +16,7 @@
 #include "root_storage/root_tbranch_write_container.hpp"
 #include "root_storage/root_tfile.hpp"
 #include "root_storage/root_ttree_write_container.hpp"
+#include "TROOT.h"
 #endif
 
 #include <memory>
@@ -27,6 +28,7 @@ namespace form::detail::experimental {
   {
     if (form::technology::GetMajor(tech) == form::technology::ROOT_MAJOR) {
 #ifdef USE_ROOT_STORAGE
+      ROOT::EnableThreadSafety();
       return std::make_shared<ROOT_TFileImp>(name, mode);
 #endif
     } else if (form::technology::GetMajor(tech) == form::technology::HDF5_MAJOR) {
@@ -42,6 +44,7 @@ namespace form::detail::experimental {
     if (form::technology::GetMajor(tech) == form::technology::ROOT_MAJOR) {
       if (form::technology::GetMinor(tech) == form::technology::ROOT_TTREE_MINOR) {
 #ifdef USE_ROOT_STORAGE
+        ROOT::EnableThreadSafety();
         return std::make_shared<ROOT_TTree_Write_ContainerImp>(name);
 #endif // USE_ROOT_STORAGE
       }
@@ -63,6 +66,7 @@ namespace form::detail::experimental {
     if (form::technology::GetMajor(tech) == form::technology::ROOT_MAJOR) {
       if (form::technology::GetMinor(tech) == form::technology::ROOT_TTREE_MINOR) {
 #ifdef USE_ROOT_STORAGE
+        ROOT::EnableThreadSafety();
         return std::make_shared<ROOT_TBranch_Read_ContainerImp>(name);
 #endif // USE_ROOT_STORAGE
       }
@@ -84,6 +88,7 @@ namespace form::detail::experimental {
     if (form::technology::GetMajor(tech) == form::technology::ROOT_MAJOR) {
       if (form::technology::GetMinor(tech) == form::technology::ROOT_TTREE_MINOR) {
 #ifdef USE_ROOT_STORAGE
+        ROOT::EnableThreadSafety();
         return std::make_shared<ROOT_TBranch_Write_ContainerImp>(name);
 #endif // USE_ROOT_STORAGE
       }

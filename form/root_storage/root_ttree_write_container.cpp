@@ -42,7 +42,6 @@ void ROOT_TTree_Write_ContainerImp::setupWrite(std::type_info const& /* type*/)
     m_tree = m_tfile->Get<TTree>(name().c_str());
   }
   if (m_tree == nullptr) {
-    //TDirectory::TContext pwd(m_tfile.get());
     m_tree = new TTree(name().c_str(), name().c_str());
     m_tree->SetDirectory(m_tfile.get());
   }
