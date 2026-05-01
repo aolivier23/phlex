@@ -86,8 +86,8 @@ PHLEX_REGISTER_PROVIDERS(s, config)
   // FIXME: Prototype 0.1 -- types hardcoded as int.
   for (auto const& name : products) {
     s.provide("provide_" + name,
-              [form_input, creator, name](phlex::data_cell_index const& id) -> int {
-                return form_input->read<int>(creator, name, id);
+              [form_input, creator, name](phlex::data_cell_index const& id) -> std::vector<int> {
+                return form_input->read<std::vector<int>>(creator, name, id);
               })
       .output_product(phlex::product_query{.creator = phlex::experimental::identifier(creator),
                                            .layer = phlex::experimental::identifier("event"),
