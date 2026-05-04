@@ -96,7 +96,7 @@ namespace {
       // Write all products to FORM
       // Pass segment_id once for entire collection (not duplicated in each product)
       // No need to check if products is empty - already checked store.empty() above
-      m_form_interface->write(creator.full(), segment_id, products);
+      m_form_interface->write(creator.plugin().trans_get_string(), segment_id, products);
       std::cout << "Wrote " << products.size() << " products to FORM\n";
     }
 
