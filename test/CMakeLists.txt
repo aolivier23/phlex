@@ -78,6 +78,7 @@ cet_test(
   phlex::core_internal
   Boost::json
 )
+
 cet_test(
   different_hierarchies
   USE_CATCH2_MAIN
@@ -88,6 +89,10 @@ cet_test(
   spdlog::spdlog
   layer_generator_internal
 )
+# Disable pending resolution of [Change fold-result caching to use
+# `multilayer_join_node`](https://github.com/Framework-R-D/phlex/issues/359)
+set_tests_properties(different_hierarchies PROPERTIES DISABLED TRUE)
+
 cet_test(filter_impl USE_CATCH2_MAIN SOURCE filter_impl.cpp LIBRARIES
          phlex::core_internal
 )

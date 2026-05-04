@@ -38,7 +38,7 @@ bool ROOT_TBranch_Read_ContainerImp::read(int id, void const** data, std::type_i
     m_tree = m_tfile->Get<TTree>(top_name().c_str());
   }
   if (m_tree == nullptr) {
-    throw std::runtime_error("ROOT_TBranch_Read_ContainerImp::read no tree found");
+    throw std::runtime_error("ROOT_TBranch_Read_ContainerImp::read no tree found with name " + top_name());
   }
   if (m_branch == nullptr) {
     m_branch = m_tree->GetBranch(col_name().c_str());
@@ -62,8 +62,11 @@ bool ROOT_TBranch_Read_ContainerImp::read(int id, void const** data, std::type_i
     //Assume this is a fundamental type like int or double
     auto fundInfo = static_cast<TDataType*>(TDictionary::GetDictionary(type));
     branchBuffer = new char[fundInfo->Size()];
-    branchStatus = m_tree->SetBranchAddress(
-      col_name().c_str(), &branchBuffer, nullptr, EDataType(fundInfo->GetType()), true);
+    branchStatus = m_tree->SetBranchAddress(col_name().c_str(),
+                                            reinterpret_cast<void*>(&branchBuffer),
+                                            nullptr,
+                                            EDataType(fundInfo->GetType()),
+                                            true);
   } else {
     auto klass = TClass::GetClass(type);
     if (!klass) {
@@ -72,8 +75,8 @@ bool ROOT_TBranch_Read_ContainerImp::read(int id, void const** data, std::type_i
                                "')");
     }
     branchBuffer = klass->New();
-    branchStatus =
-      m_tree->SetBranchAddress(col_name().c_str(), &branchBuffer, klass, EDataType::kOther_t, true);
+    branchStatus = m_tree->SetBranchAddress(
+      col_name().c_str(), reinterpret_cast<void*>(&branchBuffer), klass, EDataType::kOther_t, true);
   }
 
   if (branchStatus < 0) {
@@ -86,5 +89,9 @@ bool ROOT_TBranch_Read_ContainerImp::read(int id, void const** data, std::type_i
   Long64_t tentry = m_tree->LoadTree(id);
   m_branch->GetEntry(tentry);
   *data = branchBuffer;
+
+  // Reset the branch address to avoid unwanted ownership issues.
+  m_branch->ResetAddress();
+
   return true;
 }

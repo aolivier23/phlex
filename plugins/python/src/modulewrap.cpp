@@ -44,6 +44,8 @@ using namespace phlex;
 using phlex::concurrency;
 using phlex::product_query;
 
+// NOLINTBEGIN(performance-no-int-to-ptr) - necessary for Python interface
+
 // Simple phlex module wrapper
 // clang-format off
 struct phlex::experimental::py_phlex_module {
@@ -345,28 +347,29 @@ namespace {
         Py_DECREF(phlexmod);
       }
 
-      if (!normalizer) {
-        std::string msg;
-        if (msg_from_py_error(msg, false))
-          throw std::runtime_error("unable to retrieve the phlex type normalizer: " + msg);
-      }
+      // LCOV_EXCL_START
+      // this would only fail if the phlex installation were broken and
+      // only exists to get a proper error message instead of a segfault
+      // in that rather unlikely case
+      if (!normalizer)
+        return "";
+      // LCOV_EXCL_STOP
     }
 
     PyObject* norm = PyObject_CallOneArg(normalizer, pyobj);
-    if (!norm) {
-      std::string msg;
-      if (msg_from_py_error(msg, false))
-        throw std::runtime_error("normalization error: " + msg);
-    }
+    if (!norm)
+      return "";
 
-    std::string ann = PyUnicode_AsUTF8(norm);
+    char const* ann = PyUnicode_AsUTF8(norm);
     Py_DECREF(norm);
+    if (!ann)
+      return "";
 
     return ann;
   }
 
   // retrieve C++ (matching) types from annotations
-  static void annotations_to_strings(PyObject* callable,
+  static bool annotations_to_strings(PyObject* callable,
                                      std::vector<std::string>& input_types,
                                      std::vector<std::string>& output_types)
   {
@@ -383,21 +386,35 @@ namespace {
     }
     Py_DECREF(sann);
 
+    bool conversion_ok = true;
     if (annot && PyDict_Check(annot)) {
       // Variant guarantees OrderedDict with "return" last
-      PyObject *key, *value;
       Py_ssize_t pos = 0;
 
+      PyObject* key = nullptr;
+      PyObject* value = nullptr;
       while (PyDict_Next(annot, &pos, &key, &value)) {
+        std::string const& ann = annotation_as_text(value);
+        if (ann.empty() && PyErr_Occurred()) {
+          conversion_ok = false;
+          break;
+        }
+
         char const* key_str = PyUnicode_AsUTF8(key);
         if (strcmp(key_str, "return") == 0) {
-          output_types.push_back(annotation_as_text(value));
+          output_types.push_back(ann);
         } else {
-          input_types.push_back(annotation_as_text(value));
+          input_types.push_back(ann);
         }
       }
+    } else {
+      conversion_ok = false;
+      if (!PyErr_Occurred())
+        PyErr_SetString(PyExc_TypeError, "unknown annotation formatting");
     }
+
     Py_XDECREF(annot);
+    return conversion_ok;
   }
 
   // converters of builtin types; TODO: this is a basic subset only, b/c either
@@ -470,6 +487,10 @@ namespace {
     return ul;
   }
 
+// NOLINTBEGIN(bugprone-macro-parentheses)
+// `bugprone-macro-parentheses` expects macro parameters to be parenthesized. That is appropriate
+// for expressions, but causes havoc with C++ signatures. We suppress this warning for the block
+// because the use of continuations makes per-line suppression impossible.
 #define BASIC_CONVERTER(name, cpptype, topy, frompy)                                               \
   static intptr_t name##_to_py(cpptype a)                                                          \
   {                                                                                                \
@@ -617,6 +638,7 @@ namespace {
       return cres;                                                                                 \
     }                                                                                              \
   };
+  // NOLINTEND(bugprone-macro-parentheses)
 
   NUMPY_ARRAY_CONVERTER(vint, std::int32_t, NPY_INT32, PyLong_AsLong)
   NUMPY_ARRAY_CONVERTER(vuint, std::uint32_t, NPY_UINT32, pylong_or_int_as_ulong)
@@ -710,7 +732,8 @@ static PyObject* parse_args(PyObject* args,
 
   // retrieve C++ (matching) types from annotations
   input_types.reserve(input_queries.size());
-  annotations_to_strings(callable, input_types, output_types);
+  if (!annotations_to_strings(callable, input_types, output_types))
+    return nullptr; // Python error already set
 
   // ignore None as Python's conventional "void" return, which is meaningless in C++
   if (output_types.size() == 1 && output_types[0] == "None")
@@ -743,17 +766,27 @@ static PyObject* parse_args(PyObject* args,
   return callable;
 }
 
+// Returns the dtype suffix (e.g. "[float]") from a collection type string (e.g. "list[float]"),
+// or std::nullopt if the string contains no '[' character.
+static std::optional<std::string_view> collection_dtype(std::string const& type_name)
+{
+  auto const pos = type_name.rfind('[');
+  if (pos == std::string::npos) {
+    return std::nullopt;
+  }
+  return std::string_view{type_name}.substr(pos);
+}
+
 static bool insert_input_converters(py_phlex_module* mod,
                                     std::string const& cname, // TODO: shared_ptr<PyObject>
                                     std::vector<product_query> const& input_queries,
                                     std::vector<std::string> const& input_types)
 {
   // insert input converter nodes into the graph
-  for (size_t i = 0; i < (size_t)input_queries.size(); ++i) {
+  for (auto const [i, inp_pq, inp_type] :
+       std::views::zip(std::views::iota(size_t{}), input_queries, input_types)) {
     // TODO: this seems overly verbose and inefficient, but the function needs
     // to be properly types, so every option is made explicit
-    auto const& inp_pq = input_queries[i];
-    auto const& inp_type = input_types[i];
 
     std::string const& pyname = input_converter_name(cname, i);
     std::string output =
@@ -777,18 +810,22 @@ static bool insert_input_converters(py_phlex_module* mod,
       // TODO: these are hard-coded std::vector <-> numpy array mappings, which is
       // way too simplistic for real use. It only exists for demonstration purposes,
       // until we have an IDL
-      std::string_view dtype{inp_type.begin() + inp_type.rfind('['), inp_type.end()};
-      if (dtype == "[int32_t]") {
+      auto const dtype = collection_dtype(inp_type);
+      if (!dtype) {
+        PyErr_Format(PyExc_TypeError, "unsupported collection input type \"%s\"", inp_type.c_str());
+        return false;
+      }
+      if (*dtype == "[int32_t]") {
         insert_converter(mod, pyname, vint_to_py, inp_pq, output);
-      } else if (dtype == "[uint32_t]") {
+      } else if (*dtype == "[uint32_t]") {
         insert_converter(mod, pyname, vuint_to_py, inp_pq, output);
-      } else if (dtype == "[int64_t]") {
+      } else if (*dtype == "[int64_t]") {
         insert_converter(mod, pyname, vlong_to_py, inp_pq, output);
-      } else if (dtype == "[uint64_t]") {
+      } else if (*dtype == "[uint64_t]") {
         insert_converter(mod, pyname, vulong_to_py, inp_pq, output);
-      } else if (dtype == "[float]") {
+      } else if (*dtype == "[float]") {
         insert_converter(mod, pyname, vfloat_to_py, inp_pq, output);
-      } else if (dtype == "[double]") {
+      } else if (*dtype == "[double]") {
         insert_converter(mod, pyname, vdouble_to_py, inp_pq, output);
       } else {
         PyErr_Format(PyExc_TypeError, "unsupported collection input type \"%s\"", inp_type.c_str());
@@ -827,18 +864,22 @@ static bool insert_output_converter(py_phlex_module* mod,
   else if (out_type.compare(0, 7, "ndarray") == 0 || out_type.compare(0, 4, "list") == 0) {
     // TODO: just like for input types, these are hard-coded, but should be handled by
     // an IDL instead.
-    std::string_view dtype{out_type.begin() + out_type.rfind('['), out_type.end()};
-    if (dtype == "[int32_t]") {
+    auto const dtype = collection_dtype(out_type);
+    if (!dtype) {
+      PyErr_Format(PyExc_TypeError, "unsupported collection output type \"%s\"", out_type.c_str());
+      return false;
+    }
+    if (*dtype == "[int32_t]") {
       insert_converter(mod, cname, py_to_vint, out_pq, output);
-    } else if (dtype == "[uint32_t]") {
+    } else if (*dtype == "[uint32_t]") {
       insert_converter(mod, cname, py_to_vuint, out_pq, output);
-    } else if (dtype == "[int64_t]") {
+    } else if (*dtype == "[int64_t]") {
       insert_converter(mod, cname, py_to_vlong, out_pq, output);
-    } else if (dtype == "[uint64_t]") {
+    } else if (*dtype == "[uint64_t]") {
       insert_converter(mod, cname, py_to_vulong, out_pq, output);
-    } else if (dtype == "[float]") {
+    } else if (*dtype == "[float]") {
       insert_converter(mod, cname, py_to_vfloat, out_pq, output);
-    } else if (dtype == "[double]") {
+    } else if (*dtype == "[double]") {
       insert_converter(mod, cname, py_to_vdouble, out_pq, output);
     } else {
       PyErr_Format(PyExc_TypeError, "unsupported collection output type \"%s\"", out_type.c_str());
@@ -875,8 +916,8 @@ static PyObject* md_transform(py_phlex_module* mod, PyObject* args, PyObject* kw
   // all the same, so for now, simply raise an error if their is any ambiguity
   auto output_layer = static_cast<identifier>(input_queries[0].layer);
   if (1 < input_queries.size()) {
-    for (std::vector<product_query>::size_type iq = 1; iq < input_queries.size(); ++iq) {
-      if (static_cast<identifier>(input_queries[iq].layer) != output_layer) {
+    for (auto const& iq_pq : input_queries | std::views::drop(1)) {
+      if (static_cast<identifier>(iq_pq.layer) != output_layer) {
         PyErr_Format(PyExc_ValueError, "transform %s output layer is ambiguous", cname.c_str());
         Py_DECREF(callable);
         return nullptr;
@@ -904,20 +945,18 @@ static PyObject* md_transform(py_phlex_module* mod, PyObject* args, PyObject* kw
 
   switch (input_queries.size()) {
   case 1: {
-    auto* pyc = new py_callback_1{callable}; // TODO: leaks, but has program lifetime
-    mod->ph_module->transform(pyname, *pyc, concurrency::serial)
+    mod->ph_module->transform(pyname, py_callback_1{callable}, concurrency::serial)
       .input_family(
         product_query{.creator = identifier(c0), .layer = pq0.layer, .suffix = identifier(suff0)})
       .output_product_suffixes(pyoutput);
     break;
   }
   case 2: {
-    auto* pyc = new py_callback_2{callable};
     auto pq1 = input_queries[1];
     std::string c1 = input_converter_name(cname, 1);
     std::string suff1 =
       "py_" + (pq1.suffix ? std::string{static_cast<std::string_view>(*pq1.suffix)} : "");
-    mod->ph_module->transform(pyname, *pyc, concurrency::serial)
+    mod->ph_module->transform(pyname, py_callback_2{callable}, concurrency::serial)
       .input_family(
         product_query{.creator = identifier(c0), .layer = pq0.layer, .suffix = identifier(suff0)},
         product_query{.creator = identifier(c1), .layer = pq1.layer, .suffix = identifier(suff1)})
@@ -925,7 +964,6 @@ static PyObject* md_transform(py_phlex_module* mod, PyObject* args, PyObject* kw
     break;
   }
   case 3: {
-    auto* pyc = new py_callback_3{callable};
     auto pq1 = input_queries[1];
     std::string c1 = input_converter_name(cname, 1);
     std::string suff1 =
@@ -934,7 +972,7 @@ static PyObject* md_transform(py_phlex_module* mod, PyObject* args, PyObject* kw
     std::string c2 = input_converter_name(cname, 2);
     std::string suff2 =
       "py_" + (pq2.suffix ? std::string{static_cast<std::string_view>(*pq2.suffix)} : "");
-    mod->ph_module->transform(pyname, *pyc, concurrency::serial)
+    mod->ph_module->transform(pyname, py_callback_3{callable}, concurrency::serial)
       .input_family(
         product_query{.creator = identifier(c0), .layer = pq0.layer, .suffix = identifier(suff0)},
         product_query{.creator = identifier(c1), .layer = pq1.layer, .suffix = identifier(suff1)},
@@ -956,9 +994,11 @@ static PyObject* md_transform(py_phlex_module* mod, PyObject* args, PyObject* kw
   std::string const& out_type = output_types[0];
   std::string const& output = output_suffixes[0];
   if (!insert_output_converter(mod, cname, out_pq, out_type, output)) {
+    Py_DECREF(callable);
     return nullptr; // error already set
   }
 
+  Py_DECREF(callable);
   Py_RETURN_NONE;
 }
 
@@ -977,6 +1017,7 @@ static PyObject* md_observe(py_phlex_module* mod, PyObject* args, PyObject* kwds
 
   if (!output_types.empty()) {
     PyErr_Format(PyExc_TypeError, "an observer should not have an output type");
+    Py_DECREF(callable);
     return nullptr;
   }
 
@@ -993,26 +1034,23 @@ static PyObject* md_observe(py_phlex_module* mod, PyObject* args, PyObject* kwds
 
   switch (input_queries.size()) {
   case 1: {
-    auto* pyc = new py_callback_1v{callable};
-    mod->ph_module->observe(cname, *pyc, concurrency::serial)
+    mod->ph_module->observe(cname, py_callback_1v{callable}, concurrency::serial)
       .input_family(
         product_query{.creator = identifier(c0), .layer = pq0.layer, .suffix = identifier(suff0)});
     break;
   }
   case 2: {
-    auto* pyc = new py_callback_2v{callable};
     auto pq1 = input_queries[1];
     std::string c1 = input_converter_name(cname, 1);
     std::string suff1 =
       "py_" + (pq1.suffix ? std::string{static_cast<std::string_view>(*pq1.suffix)} : "");
-    mod->ph_module->observe(cname, *pyc, concurrency::serial)
+    mod->ph_module->observe(cname, py_callback_2v{callable}, concurrency::serial)
       .input_family(
         product_query{.creator = identifier(c0), .layer = pq0.layer, .suffix = identifier(suff0)},
         product_query{.creator = identifier(c1), .layer = pq1.layer, .suffix = identifier(suff1)});
     break;
   }
   case 3: {
-    auto* pyc = new py_callback_3v{callable};
     auto pq1 = input_queries[1];
     std::string c1 = input_converter_name(cname, 1);
     std::string suff1 =
@@ -1021,7 +1059,7 @@ static PyObject* md_observe(py_phlex_module* mod, PyObject* args, PyObject* kwds
     std::string c2 = input_converter_name(cname, 2);
     std::string suff2 =
       "py_" + (pq2.suffix ? std::string{static_cast<std::string_view>(*pq2.suffix)} : "");
-    mod->ph_module->observe(cname, *pyc, concurrency::serial)
+    mod->ph_module->observe(cname, py_callback_3v{callable}, concurrency::serial)
       .input_family(
         product_query{.creator = identifier(c0), .layer = pq0.layer, .suffix = identifier(suff0)},
         product_query{.creator = identifier(c1), .layer = pq1.layer, .suffix = identifier(suff1)},
@@ -1035,9 +1073,12 @@ static PyObject* md_observe(py_phlex_module* mod, PyObject* args, PyObject* kwds
   }
   }
 
+  Py_DECREF(callable);
   Py_RETURN_NONE;
 }
 
+// PyMethodDef arrays must be non-const; tp_methods in PyTypeObject takes a non-const pointer.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 static PyMethodDef md_methods[] = {{(char*)"transform",
                                     (PyCFunction)md_transform,
                                     METH_VARARGS | METH_KEYWORDS,
@@ -1049,6 +1090,8 @@ static PyMethodDef md_methods[] = {{(char*)"transform",
                                    {(char*)nullptr, nullptr, 0, nullptr}};
 
 // clang-format off
+// PyType_Ready() modifies PyTypeObject in-place; the Python C API requires non-const.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 PyTypeObject phlex::experimental::PhlexModule_Type = {
   PyVarObject_HEAD_INIT(&PyType_Type, 0)
   (char*)"pyphlex.module",       // tp_name
@@ -1155,7 +1198,8 @@ static PyObject* sc_provide(py_phlex_source* src, PyObject* args, PyObject* kwds
   // retrieve C++ (matching) types from annotations
   std::vector<std::string> input_types;
   std::vector<std::string> output_types;
-  annotations_to_strings(callable, input_types, output_types);
+  if (!annotations_to_strings(callable, input_types, output_types))
+    return nullptr; // Python error already set
 
   // provider needs to take a single "data_cell_input"
   if (input_types.size() != 1 || input_types[0] != "data_cell_index") {
@@ -1182,11 +1226,8 @@ static PyObject* sc_provide(py_phlex_source* src, PyObject* args, PyObject* kwds
   // translate and validate the output query
   auto opq = validate_query(output);
   if (!opq.has_value()) {
-    // validate_query will have set a python exception
-    std::string msg;
-    if (msg_from_py_error(msg, false)) {
-      throw std::runtime_error("output specification error: " + msg);
-    }
+    // validate_query has set a python exception with details about the error
+    return nullptr;
   }
 
   // insert provider node (TODO: as in transform and observe, we'll leak the
@@ -1219,23 +1260,27 @@ static PyObject* sc_provide(py_phlex_source* src, PyObject* args, PyObject* kwds
   } else if (out_type.compare(0, 7, "ndarray") == 0 || out_type.compare(0, 4, "list") == 0) {
     // TODO: just like for input types, these are hard-coded, but should be handled by
     // an IDL instead.
-    std::string_view dtype{out_type.begin() + out_type.rfind('['), out_type.end()};
-    if (dtype == "[int32_t]") {
+    auto const dtype = collection_dtype(out_type);
+    if (!dtype) {
+      PyErr_Format(PyExc_TypeError, "unsupported collection output type \"%s\"", out_type.c_str());
+      return nullptr;
+    }
+    if (*dtype == "[int32_t]") {
       auto* pyc = new provider_cb_vint{callable};
       src->ph_source->provide(functor_name, *pyc).output_product(opq.value());
-    } else if (dtype == "[uint32_t]") {
+    } else if (*dtype == "[uint32_t]") {
       auto* pyc = new provider_cb_vuint{callable};
       src->ph_source->provide(functor_name, *pyc).output_product(opq.value());
-    } else if (dtype == "[int64_t]") {
+    } else if (*dtype == "[int64_t]") {
       auto* pyc = new provider_cb_vlong{callable};
       src->ph_source->provide(functor_name, *pyc).output_product(opq.value());
-    } else if (dtype == "[uint64_t]") {
+    } else if (*dtype == "[uint64_t]") {
       auto* pyc = new provider_cb_vulong{callable};
       src->ph_source->provide(functor_name, *pyc).output_product(opq.value());
-    } else if (dtype == "[float]") {
+    } else if (*dtype == "[float]") {
       auto* pyc = new provider_cb_vfloat{callable};
       src->ph_source->provide(functor_name, *pyc).output_product(opq.value());
-    } else if (dtype == "[double]") {
+    } else if (*dtype == "[double]") {
       auto* pyc = new provider_cb_vdouble{callable};
       src->ph_source->provide(functor_name, *pyc).output_product(opq.value());
     } else {
@@ -1250,6 +1295,8 @@ static PyObject* sc_provide(py_phlex_source* src, PyObject* args, PyObject* kwds
   Py_RETURN_NONE;
 }
 
+// PyMethodDef arrays must be non-const; tp_methods in PyTypeObject takes a non-const pointer.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 static PyMethodDef sc_methods[] = {{(char*)"provide",
                                     (PyCFunction)sc_provide,
                                     METH_VARARGS | METH_KEYWORDS,
@@ -1257,6 +1304,8 @@ static PyMethodDef sc_methods[] = {{(char*)"provide",
                                    {(char*)nullptr, nullptr, 0, nullptr}};
 
 // clang-format off
+// PyType_Ready() modifies PyTypeObject in-place; the Python C API requires non-const.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 PyTypeObject phlex::experimental::PhlexSource_Type = {
   PyVarObject_HEAD_INIT(&PyType_Type, 0)
   (char*)"pyphlex.source",       // tp_name
@@ -1323,3 +1372,5 @@ PyTypeObject phlex::experimental::PhlexSource_Type = {
 #endif
 };
 // clang-format on
+
+// NOLINTEND(performance-no-int-to-ptr)

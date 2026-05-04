@@ -13,6 +13,7 @@
 #include "phlex/model/data_cell_index.hpp"
 #include "phlex/source.hpp"
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 
 using namespace phlex::experimental;
@@ -186,6 +187,7 @@ static bool initialize()
   // FIXME: Spack does not set PYTHONPATH or VIRTUAL_ENV, but it does set
   //        CMAKE_PREFIX_PATH. Add site-packages directories from CMAKE_PREFIX_PATH
   //        to sys.path so Python can find packages in Spack views.
+  // NOLINTNEXTLINE(concurrency-mt-unsafe) - Single-threaded context
   if (char const* cmake_prefix_path = std::getenv("CMAKE_PREFIX_PATH")) {
     add_cmake_prefix_paths_to_syspath(cmake_prefix_path);
   }

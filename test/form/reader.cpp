@@ -10,6 +10,7 @@
 #include <fstream>
 #include <map>
 #include <sstream>
+#include <utility> // for std::ignore
 #include <vector>
 
 static int const NUMBER_EVENT = 4;
@@ -31,7 +32,7 @@ struct EvtChecksum {
 
 int main(int argc, char** argv)
 {
-  std::cout << "In main" << std::endl;
+  std::cout << "In main" << '\n';
 
   std::string const filename = (argc > 1) ? argv[1] : "toy.root";
   std::string const checksum_filename = (argc > 2) ? argv[2] : "toy_checksums.txt";
@@ -43,7 +44,7 @@ int main(int argc, char** argv)
 
   std::ifstream checksum_file(checksum_filename);
   if (!checksum_file.is_open()) {
-    std::cerr << "ERROR: Could not open checksum file: " << checksum_filename << std::endl;
+    std::cerr << "ERROR: Could not open checksum file: " << checksum_filename << '\n';
     return 1;
   }
 
@@ -53,13 +54,13 @@ int main(int argc, char** argv)
     std::string type;
     iss >> type;
     if (type == "SEG") {
-      int nevent, nseg;
       SegChecksum cs;
+      int nevent{}, nseg{};
       iss >> nevent >> nseg >> cs.check >> cs.cpx >> cs.cpy >> cs.cpz;
       expected_seg[{nevent, nseg}] = cs;
     } else if (type == "EVT") {
-      int nevent;
       EvtChecksum cs;
+      int nevent{};
       iss >> nevent >> cs.check;
       expected_evt[nevent] = cs;
     }
@@ -80,7 +81,7 @@ int main(int argc, char** argv)
   bool all_passed = true;
 
   for (int nevent = 0; nevent < NUMBER_EVENT; nevent++) {
-    std::cout << "PHLEX: Read Event No. " << nevent << std::endl;
+    std::cout << "PHLEX: Read Event No. " << nevent << '\n';
 
     std::vector<float> const* track_x = nullptr;
 
@@ -88,7 +89,7 @@ int main(int argc, char** argv)
 
       std::vector<float> const* track_start_x = nullptr;
       char seg_id_text[64];
-      snprintf(seg_id_text, 64, seg_id, nevent, nseg);
+      std::ignore = snprintf(seg_id_text, 64, seg_id, nevent, nseg);
 
       std::string segment_id(seg_id_text);
 
@@ -121,14 +122,14 @@ int main(int argc, char** argv)
       for (float val : *track_start_x)
         check += val;
       for (int val : *track_n_hits)
-        check += val;
+        check += static_cast<float>(val);
       TrackStart checkPoints;
       for (TrackStart val : *start_points)
         checkPoints += val;
       std::cout << "PHLEX: Segment = " << nseg << ": seg_id_text = " << seg_id_text
-                << ", check = " << check << std::endl;
+                << ", check = " << check << '\n';
       std::cout << "PHLEX: Segment = " << nseg << ": seg_id_text = " << seg_id_text
-                << ", checkPoints = " << checkPoints << std::endl;
+                << ", checkPoints = " << checkPoints << '\n';
 
       // Verify segment checksums
       auto key = std::make_pair(nevent, nseg);
@@ -139,18 +140,18 @@ int main(int argc, char** argv)
                       (std::fabs(checkPoints.getY() - exp.cpy) <= TOLERANCE) &&
                       (std::fabs(checkPoints.getZ() - exp.cpz) <= TOLERANCE);
         if (seg_ok) {
-          std::cout << "VERIFY PASS: event=" << nevent << " seg=" << nseg << std::endl;
+          std::cout << "VERIFY PASS: event=" << nevent << " seg=" << nseg << '\n';
         } else {
           std::cerr << "VERIFY FAIL: event=" << nevent << " seg=" << nseg
                     << " expected check=" << exp.check << " got=" << check
                     << " expected cpx=" << exp.cpx << " got=" << checkPoints.getX()
                     << " expected cpy=" << exp.cpy << " got=" << checkPoints.getY()
-                    << " expected cpz=" << exp.cpz << " got=" << checkPoints.getZ() << std::endl;
+                    << " expected cpz=" << exp.cpz << " got=" << checkPoints.getZ() << '\n';
           all_passed = false;
         }
       } else {
         std::cerr << "VERIFY FAIL: no expected checksum for event=" << nevent << " seg=" << nseg
-                  << std::endl;
+                  << '\n';
         all_passed = false;
       }
 
@@ -158,10 +159,10 @@ int main(int argc, char** argv)
       delete track_n_hits;
       delete start_points;
     }
-    std::cout << "PHLEX: Read Event segments done " << nevent << std::endl;
+    std::cout << "PHLEX: Read Event segments done " << nevent << '\n';
 
     char evt_id_text[64];
-    snprintf(evt_id_text, 64, evt_id, nevent);
+    std::ignore = snprintf(evt_id_text, 64, evt_id, nevent);
 
     std::string event_id(evt_id_text);
 
@@ -177,35 +178,35 @@ int main(int argc, char** argv)
     for (float val : *track_x)
       check += val;
     std::cout << "PHLEX: Event = " << nevent << ": evt_id_text = " << evt_id_text
-              << ", check = " << check << std::endl;
+              << ", check = " << check << '\n';
 
     // Verify event checksum
     if (expected_evt.count(nevent)) {
       auto const& exp = expected_evt[nevent];
       bool evt_ok = (std::fabs(check - exp.check) <= TOLERANCE);
       if (evt_ok) {
-        std::cout << "VERIFY PASS: event=" << nevent << std::endl;
+        std::cout << "VERIFY PASS: event=" << nevent << '\n';
       } else {
         std::cerr << "VERIFY FAIL: event=" << nevent << " expected check=" << exp.check
-                  << " got=" << check << std::endl;
+                  << " got=" << check << '\n';
         all_passed = false;
       }
     } else {
-      std::cerr << "VERIFY FAIL: no expected checksum for event=" << nevent << std::endl;
+      std::cerr << "VERIFY FAIL: no expected checksum for event=" << nevent << '\n';
       all_passed = false;
     }
 
     delete track_x; //FIXME: PHLEX owns this memory!
 
-    std::cout << "PHLEX: Read Event done " << nevent << std::endl;
+    std::cout << "PHLEX: Read Event done " << nevent << '\n';
   }
 
   // Report overall result
   if (all_passed) {
-    std::cout << "PHLEX: All verification checks PASSED." << std::endl;
+    std::cout << "PHLEX: All verification checks PASSED." << '\n';
     return 0;
   } else {
-    std::cerr << "PHLEX: Some verification checks FAILED." << std::endl;
+    std::cerr << "PHLEX: Some verification checks FAILED." << '\n';
     return 1;
   }
 }

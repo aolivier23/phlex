@@ -8,11 +8,12 @@ using namespace phlex::experimental;
 static py_lifeline_t* ll_new(PyTypeObject* pytype, PyObject*, PyObject*)
 {
   py_lifeline_t* pyobj = (py_lifeline_t*)pytype->tp_alloc(pytype, 0);
-  if (!pyobj)
+  if (pyobj) {
+    pyobj->m_view = nullptr;
+    new (&pyobj->m_source) std::shared_ptr<void>{};
+  } else {
     PyErr_Print();
-  pyobj->m_view = nullptr;
-  new (&pyobj->m_source) std::shared_ptr<void>{};
-
+  }
   return pyobj;
 }
 
@@ -42,6 +43,8 @@ static void ll_dealloc(py_lifeline_t* pyobj)
 }
 
 // clang-format off
+// PyType_Ready() modifies PyTypeObject in-place; the Python C API requires non-const.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 PyTypeObject phlex::experimental::PhlexLifeline_Type = {
   PyVarObject_HEAD_INIT(&PyType_Type, 0)
   (char*) "pyphlex.lifeline",                        // tp_name

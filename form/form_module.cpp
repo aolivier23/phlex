@@ -96,13 +96,16 @@ namespace {
       // Write all products to FORM
       // Pass segment_id once for entire collection (not duplicated in each product)
       // No need to check if products is empty - already checked store.empty() above
-      m_form_interface->write(creator.full(), segment_id, products);
+      m_form_interface->write(creator.plugin().trans_get_string(), segment_id, products);
       std::cout << "Wrote " << products.size() << " products to FORM\n";
     }
 
   private:
+    // Algorithm configuration fixed at construction; intentionally immutable for object lifetime.
+    // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
     std::string const m_output_file;
     int const m_technology;
+    // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
     std::unique_ptr<form::experimental::form_writer_interface> m_form_interface;
   };
 

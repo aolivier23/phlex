@@ -6,17 +6,16 @@ The output format is compatible with VS Code problem matchers such as "$gcc":
 
   /abs/path/file.cpp:line:column: warning: message [check-name]
 
-This script intentionally uses a lightweight line-based parser so it does not
-depend on PyYAML.
 """
 
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+import yaml
 
 
 @dataclass
@@ -28,120 +27,83 @@ class Diagnostic:
     level: str = "warning"
     file_path: str | None = None
     file_offset: int | None = None
+    notes: list["DiagnosticNote"] | None = None
 
 
-def _strip_yaml_string(value: str) -> str:
-    value = value.strip()
-    if len(value) >= 2 and value[0] == "'" and value[-1] == "'":
-        # YAML single-quoted escape sequence: '' -> '
-        return value[1:-1].replace("''", "'")
-    return value
+@dataclass
+class DiagnosticNote:
+    """Represents a single clang-tidy note attached to a diagnostic."""
 
-
-def _parse_kv(line: str) -> tuple[str, str] | None:
-    match = re.match(r"^\s*([^:]+):\s*(.*)$", line)
-    if not match:
-        return None
-    return match.group(1).strip(), match.group(2).rstrip("\n")
+    file_path: str | None = None
+    file_offset: int | None = None
+    message: str = ""
 
 
 def parse_clang_tidy_fixes(text: str) -> tuple[str | None, list[Diagnostic]]:
     """Parse a clang-tidy export-fixes YAML string into a list of diagnostics."""
-    main_source_file: str | None = None
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        print(f"Failed to parse clang-tidy fixes YAML: {exc}", file=sys.stderr)
+        return None, []
+    if not isinstance(data, dict):
+        return None, []
+
+    main_source_file: str | None = data.get("MainSourceFile") or None
+    raw_diagnostics = data.get("Diagnostics") or []
+
     diagnostics: list[Diagnostic] = []
-
-    current: Diagnostic | None = None
-    in_diag_message = False
-    last_diag_message_key: str | None = None
-
-    for raw_line in text.splitlines():
-        line = raw_line.rstrip("\n")
-
-        if line.startswith("MainSourceFile:"):
-            kv = _parse_kv(line)
-            if kv:
-                main_source_file = _strip_yaml_string(kv[1])
+    for entry in raw_diagnostics:
+        if not isinstance(entry, dict):
             continue
 
-        if re.match(r"^-\s+[^:]+:\s*", line):
-            if current is not None:
-                diagnostics.append(current)
-            current = Diagnostic()
-            in_diag_message = False
-            last_diag_message_key = None
+        msg = entry.get("DiagnosticMessage") or {}
+        file_path = msg.get("FilePath") or None
+        file_offset = msg.get("FileOffset")
+        message = msg.get("Message") or ""
 
-            kv = _parse_kv(line[2:])
-            if kv and kv[0] == "DiagnosticName":
-                current.check = _strip_yaml_string(kv[1]).strip() or "clang-tidy"
-            continue
+        check = str(entry.get("DiagnosticName") or "clang-tidy").strip() or "clang-tidy"
+        level = str(entry.get("Level") or "warning").strip().lower() or "warning"
 
-        if current is None:
-            continue
+        parsed_file_offset: int | None = None
+        if file_offset is not None:
+            try:
+                parsed_file_offset = int(file_offset)
+            except (TypeError, ValueError):
+                # Invalid or non-numeric offsets are treated as unavailable.
+                parsed_file_offset = None
 
-        if re.match(r"^\s*DiagnosticMessage:\s*$", line):
-            in_diag_message = True
-            last_diag_message_key = None
-            continue
+        notes: list[DiagnosticNote] = []
+        for raw_note in entry.get("Notes") or []:
+            if not isinstance(raw_note, dict):
+                continue
 
-        if re.match(r"^\s*Notes:\s*$", line):
-            # Notes are supplementary and do not define the primary location.
-            in_diag_message = False
-            last_diag_message_key = None
-            continue
-
-        if re.match(r"^\s*Replacements:\s*$", line):
-            # Replacements entries have their own FilePath keys; stop reading
-            # DiagnosticMessage fields here to avoid overwriting the primary location.
-            in_diag_message = False
-            last_diag_message_key = None
-            continue
-
-        if re.match(r"^\s*Ranges:\s*$", line):
-            # Range entries are nested structures within DiagnosticMessage and
-            # can include empty FilePath values that are not the diagnostic's
-            # primary location.
-            in_diag_message = False
-            last_diag_message_key = None
-            continue
-
-        kv = _parse_kv(line)
-        if not kv:
-            if in_diag_message and last_diag_message_key == "Message":
-                continuation = line.strip()
-                if continuation:
-                    current.message = f"{current.message} {continuation}".strip()
-            continue
-
-        key, value = kv
-
-        if in_diag_message:
-            if key == "Message":
-                current.message = _strip_yaml_string(value)
-                last_diag_message_key = key
-            elif key == "FilePath":
-                current.file_path = _strip_yaml_string(value)
-                last_diag_message_key = key
-            elif key == "FileOffset":
+            note_offset = raw_note.get("FileOffset")
+            parsed_note_offset: int | None = None
+            if note_offset is not None:
                 try:
-                    current.file_offset = int(value.strip())
-                except ValueError:
-                    current.file_offset = None
-                last_diag_message_key = key
-            continue
+                    parsed_note_offset = int(note_offset)
+                except (TypeError, ValueError):
+                    parsed_note_offset = None
 
-        last_diag_message_key = None
+            notes.append(
+                DiagnosticNote(
+                    file_path=raw_note.get("FilePath") or None,
+                    file_offset=parsed_note_offset,
+                    message=raw_note.get("Message") or "",
+                )
+            )
 
-        if key == "DiagnosticName":
-            current.check = _strip_yaml_string(value).strip() or "clang-tidy"
-            continue
-
-        if key == "Level":
-            level = _strip_yaml_string(value).strip().lower()
-            if level:
-                current.level = level
-
-    if current is not None:
-        diagnostics.append(current)
+        diagnostics.append(
+            Diagnostic(
+                check=check,
+                message=message,
+                level=level,
+                file_path=file_path,
+                file_offset=parsed_file_offset,
+                notes=notes,
+            )
+        )
 
     return main_source_file, diagnostics
 
@@ -185,6 +147,40 @@ def parse_path_map(items: list[str]) -> list[tuple[str, str]]:
         old, new = item.split("=", 1)
         mappings.append((old, new))
     return mappings
+
+
+def is_within_workspace(path: str, workspace_root: Path) -> bool:
+    """Return True when path resolves under workspace_root."""
+    try:
+        Path(path).resolve().relative_to(workspace_root.resolve())
+    except ValueError:
+        return False
+    except OSError:
+        return False
+    return True
+
+
+def choose_workspace_note(
+    notes: list[DiagnosticNote],
+    workspace_root: Path,
+    mappings: list[tuple[str, str]] | None = None,
+) -> DiagnosticNote | None:
+    """Choose the most helpful in-workspace note for external diagnostics."""
+    effective_mappings = mappings or []
+    workspace_notes = [
+        note
+        for note in notes
+        if note.file_path
+        and is_within_workspace(apply_path_map(note.file_path, effective_mappings), workspace_root)
+    ]
+    if not workspace_notes:
+        return None
+
+    for note in workspace_notes:
+        if note.message.startswith("Calling '"):
+            return note
+
+    return workspace_notes[0]
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -235,6 +231,7 @@ def main() -> int:
     ]
     extra_mappings = parse_path_map(args.path_map)
     mappings = extra_mappings + default_mappings
+    workspace_root = args.workspace_root.resolve()
 
     lines: list[str] = []
     for diag in diagnostics:
@@ -244,12 +241,36 @@ def main() -> int:
             continue
 
         mapped = apply_path_map(file_path, mappings)
-        resolved = Path(mapped)
-
         offset = diag.file_offset if diag.file_offset is not None else 0
+
+        chosen_note = None
+        original_location: tuple[str, int, int] | None = None
+        if not is_within_workspace(mapped, workspace_root):
+            chosen_note = choose_workspace_note(diag.notes or [], workspace_root, mappings)
+            if chosen_note is not None:
+                chosen_note_path = chosen_note.file_path
+                if chosen_note_path is None:
+                    chosen_note = None
+                else:
+                    original_resolved = Path(mapped)
+                    original_location = (
+                        str(original_resolved),
+                        *offset_to_line_col(original_resolved, offset),
+                    )
+                    mapped = apply_path_map(chosen_note_path, mappings)
+                    offset = chosen_note.file_offset if chosen_note.file_offset is not None else 0
+
+        resolved = Path(mapped)
         line, col = offset_to_line_col(resolved, offset)
 
         message = diag.message or "clang-tidy diagnostic"
+        if original_location is not None and chosen_note is not None:
+            original_file, original_line, original_col = original_location
+            message = (
+                f"{message} (reported in external header at "
+                f"{original_file}:{original_line}:{original_col}; "
+                f"trace note: {chosen_note.message})"
+            )
         check = diag.check or "clang-tidy"
         severity = diag.level if diag.level in {"error", "warning", "note"} else "warning"
         lines.append(f"{resolved}:{line}:{col}: {severity}: {message} [{check}]")
