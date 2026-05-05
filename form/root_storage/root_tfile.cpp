@@ -3,13 +3,11 @@
 #include "root_tfile.hpp"
 
 #include "TFile.h"
-#include "TROOT.h"
 
 using namespace form::detail::experimental;
 ROOT_TFileImp::ROOT_TFileImp(std::string const& name, char mode) :
   Storage_File(name, mode), m_file(nullptr)
 {
-  ROOT::EnableThreadSafety();
   if (mode == 'c' || mode == 'r' || mode == 'o') {
     m_file.reset(TFile::Open(name.c_str(), "RECREATE"));
   } else {
