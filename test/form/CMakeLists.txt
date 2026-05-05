@@ -102,3 +102,43 @@ cet_test(form_storage_test USE_CATCH2_MAIN SOURCE form_storage_test.cpp LIBRARIE
          storage
 )
 target_include_directories(form_storage_test PRIVATE ${PROJECT_SOURCE_DIR}/form)
+
+add_library(generate_vector MODULE generate_vector.cpp)
+target_link_libraries(generate_vector PRIVATE phlex::module)
+
+cet_test(
+  job:form_gaussian_write
+  HANDBUILT
+  TEST_EXEC
+  phlex::phlex
+  TEST_ARGS
+  -j
+  1
+  -c
+  ${CMAKE_CURRENT_SOURCE_DIR}/form_gaussian_write_test.jsonnet
+  TEST_PROPERTIES
+  ENVIRONMENT
+  "PHLEX_PLUGIN_PATH=${PROJECT_BINARY_DIR}:${CMAKE_BINARY_DIR}/form"
+  TEST_WORKDIR
+  form_gaussian_test
+)
+
+cet_test(
+  job:form_gaussian_read
+  HANDBUILT
+  TEST_EXEC
+  phlex::phlex
+  TEST_ARGS
+  -j
+  1
+  -c
+  ${CMAKE_CURRENT_SOURCE_DIR}/form_gaussian_read_test.jsonnet
+  TEST_PROPERTIES
+  ENVIRONMENT
+  "PHLEX_PLUGIN_PATH=${PROJECT_BINARY_DIR}:${CMAKE_BINARY_DIR}/form"
+  DIRTY_WORKDIR
+  TEST_WORKDIR
+  form_gaussian_test
+  REQUIRED_FIXTURES
+  job:form_gaussian_write
+)
