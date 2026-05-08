@@ -9,13 +9,15 @@
     form_standard_and_offset_source: {
       cpp: 'form_source',
       input_file: 'form_gaussian_write_test.root',
-      creator: 'add_standard_and_offset_wires',
+      algorithm: 'add_wires',
+      plugin: 'add_standard_and_offset_wires',
       products: ['sums'],
     },
     form_standard_and_wider_source: {
       cpp: 'form_source',
       input_file: 'form_gaussian_write_test.root',
-      creator: 'add_standard_and_wider_wires',
+      algorithm: 'add_wires',
+      plugin: 'add_standard_and_wider_wires',
       products: ['sums'],
     },
   },

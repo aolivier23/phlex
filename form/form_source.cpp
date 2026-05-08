@@ -50,9 +50,13 @@ PHLEX_REGISTER_PROVIDERS(s, config)
 
   // Extract configuration from Phlex config
   std::string const input_file = config.get<std::string>("input_file");
-  std::string const creator = config.get<std::string>("creator");
+  auto const alg_name = config.get<std::string>("algorithm");
+  auto const plugin_name = config.get<std::string>("plugin");
   std::string const tech_string = config.get<std::string>("technology", "ROOT_TTREE");
   auto const products = config.get<std::vector<std::string>>("products");
+
+  std::string const creator = plugin_name + ":" + alg_name;
+  std::string const creatorToAdvertise = plugin_name;
 
   std::cout << "Configuration:\n";
   std::cout << "  input_file: " << input_file << "\n";
@@ -89,7 +93,7 @@ PHLEX_REGISTER_PROVIDERS(s, config)
               [form_input, creator, name](phlex::data_cell_index const& id) -> std::vector<int> {
                 return form_input->read<std::vector<int>>(creator, name, id);
               })
-      .output_product(phlex::product_query{.creator = phlex::experimental::identifier(creator),
+      .output_product(phlex::product_query{.creator = phlex::experimental::identifier(creatorToAdvertise),
                                            .layer = phlex::experimental::identifier("event"),
                                            .suffix = phlex::experimental::identifier(name)});
   }
