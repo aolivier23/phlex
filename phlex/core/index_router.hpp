@@ -65,6 +65,10 @@ namespace phlex::experimental {
                   data_cell_index_ptr index,
                   std::size_t message_id);
       ~layer_scope();
+      layer_scope(layer_scope const&) = delete;
+      layer_scope& operator=(layer_scope const&) = delete;
+      layer_scope(layer_scope&&) = delete;
+      layer_scope& operator=(layer_scope&&) = delete;
       std::size_t depth() const;
 
     private:
@@ -83,7 +87,7 @@ namespace phlex::experimental {
   public:
     struct named_input_port {
       product_query input_product;
-      tbb::flow::receiver<message>* port;
+      tbb::flow::receiver<message>* port{};
     };
     using named_input_ports_t = std::vector<named_input_port>;
 
@@ -92,7 +96,7 @@ namespace phlex::experimental {
 
     struct provider_input_port_t {
       product_query input_product;
-      tbb::flow::receiver<index_message>* port;
+      tbb::flow::receiver<index_message>* port{};
     };
     using provider_input_ports_t = std::map<std::string, provider_input_port_t>;
 

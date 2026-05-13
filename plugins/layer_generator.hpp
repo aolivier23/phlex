@@ -39,13 +39,14 @@
 namespace phlex::experimental {
   struct layer_spec {
     std::string parent_layer_name;
-    std::size_t total_per_parent_data_cell;
+    std::size_t total_per_parent_data_cell{};
     std::size_t starting_value = 0;
   };
 
   class layer_generator {
   public:
     layer_generator();
+    ~layer_generator() = default;
 
     layer_generator(layer_generator const&) = delete;
     layer_generator& operator=(layer_generator const&) = delete;

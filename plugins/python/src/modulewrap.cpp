@@ -59,7 +59,7 @@ PyObject* phlex::experimental::wrap_module(phlex_module_t& module_)
   py_phlex_module* pymod = PyObject_New(py_phlex_module, &PhlexModule_Type);
   pymod->ph_module = &module_;
 
-  return (PyObject*)pymod;
+  return reinterpret_cast<PyObject*>(pymod);
 }
 
 // Simple phlex source wrapper
@@ -75,7 +75,7 @@ PyObject* phlex::experimental::wrap_source(phlex_source_t& source_)
   py_phlex_source* pysrc = PyObject_New(py_phlex_source, &PhlexSource_Type);
   pysrc->ph_source = &source_;
 
-  return (PyObject*)pysrc;
+  return reinterpret_cast<PyObject*>(pysrc);
 }
 
 namespace {
@@ -97,9 +97,9 @@ namespace {
 
   static inline PyObject* lifeline_transform(intptr_t arg)
   {
-    PyObject* pyobj = (PyObject*)arg;
+    PyObject* pyobj = reinterpret_cast<PyObject*>(arg);
     if (pyobj && PyObject_TypeCheck(pyobj, &PhlexLifeline_Type)) {
-      return ((py_lifeline_t*)pyobj)->m_view;
+      return reinterpret_cast<py_lifeline_t*>(pyobj)->m_view;
     }
     return pyobj;
   }
@@ -139,6 +139,8 @@ namespace {
       // - TOCTOU race on Py_IsInitialized() without GIL
       // - Module offloading in interpreter cleanup phase 2
     }
+    py_callback(py_callback&&) = default;
+    py_callback& operator=(py_callback&&) = default;
 
     template <typename... Args>
     intptr_t call(Args... args)
@@ -162,7 +164,7 @@ namespace {
         throw std::runtime_error(error_msg.c_str());
       }
 
-      return (intptr_t)result;
+      return reinterpret_cast<intptr_t>(result);
     }
 
     template <typename... Args>
@@ -495,19 +497,19 @@ namespace {
   static intptr_t name##_to_py(cpptype a)                                                          \
   {                                                                                                \
     PyGILRAII gil;                                                                                 \
-    return (intptr_t)topy(a);                                                                      \
+    return reinterpret_cast<intptr_t>(topy(a));                                                    \
   }                                                                                                \
                                                                                                    \
   static cpptype py_to_##name(intptr_t pyobj)                                                      \
   {                                                                                                \
     PyGILRAII gil;                                                                                 \
-    cpptype i = (cpptype)frompy((PyObject*)pyobj);                                                 \
+    cpptype i = static_cast<cpptype>(frompy(reinterpret_cast<PyObject*>(pyobj)));                  \
     std::string msg;                                                                               \
     if (msg_from_py_error(msg, true)) {                                                            \
-      Py_DECREF((PyObject*)pyobj);                                                                 \
+      Py_DECREF(reinterpret_cast<PyObject*>(pyobj));                                               \
       throw std::runtime_error("Python conversion error for type " #name ": " + msg);              \
     }                                                                                              \
-    Py_DECREF((PyObject*)pyobj);                                                                   \
+    Py_DECREF(reinterpret_cast<PyObject*>(pyobj));                                                 \
     return i;                                                                                      \
   }                                                                                                \
                                                                                                    \
@@ -516,7 +518,8 @@ namespace {
     {                                                                                              \
       PyGILRAII gil;                                                                               \
       PyObject* arg0 = wrap_dci(id);                                                               \
-      PyObject* pyres = (PyObject*)call((intptr_t)arg0); /* decrefs arg0 */                        \
+      intptr_t const arg0i = reinterpret_cast<intptr_t>(arg0);                                     \
+      PyObject* pyres = reinterpret_cast<PyObject*>(call(arg0i)); /* decrefs arg0 */               \
       cpptype cres = frompy(pyres);                                                                \
       Py_DECREF(pyres);                                                                            \
       return cres;                                                                                 \
@@ -544,37 +547,37 @@ namespace {
     PyGILRAII gil;                                                                                 \
                                                                                                    \
     if (!v)                                                                                        \
-      return (intptr_t)nullptr;                                                                    \
+      return 0;                                                                                    \
                                                                                                    \
     /* use a numpy view with the shared pointer tied up in a lifeline object (note: this */        \
     /* is just a demonstrator; alternatives are still being considered) */                         \
     npy_intp dims[] = {static_cast<npy_intp>(v->size())};                                          \
                                                                                                    \
-    PyObject* np_view = PyArray_SimpleNewFromData(1,                 /* 1-D array */               \
-                                                  dims,              /* dimension sizes */         \
-                                                  nptype,            /* numpy C type */            \
-                                                  (void*)(v->data()) /* raw buffer */              \
+    PyObject* np_view = PyArray_SimpleNewFromData(1,          /* 1-D array */                      \
+                                                  dims,       /* dimension sizes */                \
+                                                  nptype,     /* numpy C type */                   \
+                                                  (v->data()) /* raw buffer */                     \
     );                                                                                             \
                                                                                                    \
     if (!np_view)                                                                                  \
-      return (intptr_t)nullptr;                                                                    \
+      return 0;                                                                                    \
                                                                                                    \
     /* make the data read-only by not making it writable */                                        \
-    PyArray_CLEARFLAGS((PyArrayObject*)np_view, NPY_ARRAY_WRITEABLE);                              \
+    PyArray_CLEARFLAGS(reinterpret_cast<PyArrayObject*>(np_view), NPY_ARRAY_WRITEABLE);            \
                                                                                                    \
     /* create a lifeline object to tie this array and the original handle together; note */        \
     /* that the callback code needs to pick the data member out of the lifeline object, */         \
     /* when passing it to the registered Python function */                                        \
-    py_lifeline_t* pyll =                                                                          \
-      (py_lifeline_t*)PhlexLifeline_Type.tp_new(&PhlexLifeline_Type, nullptr, nullptr);            \
+    py_lifeline_t* pyll = reinterpret_cast<py_lifeline_t*>(                                        \
+      PhlexLifeline_Type.tp_new(&PhlexLifeline_Type, nullptr, nullptr));                           \
     if (!pyll) {                                                                                   \
       Py_DECREF(np_view);                                                                          \
-      return (intptr_t)nullptr;                                                                    \
+      return 0;                                                                                    \
     }                                                                                              \
     pyll->m_source = v;                                                                            \
     pyll->m_view = np_view; /* steals reference */                                                 \
                                                                                                    \
-    return (intptr_t)pyll;                                                                         \
+    return reinterpret_cast<intptr_t>(pyll);                                                       \
   }
 
   VECTOR_CONVERTER(vint, std::int32_t, NPY_INT32)
@@ -592,8 +595,8 @@ namespace {
     auto vec = std::make_shared<std::vector<cpptype>>();                                           \
                                                                                                    \
     /* TODO: because of unresolved ownership issues, copy the full array contents */               \
-    if (PyArray_Check((PyObject*)pyobj)) {                                                         \
-      PyArrayObject* arr = (PyArrayObject*)pyobj;                                                  \
+    if (PyArray_Check(reinterpret_cast<PyObject*>(pyobj))) {                                       \
+      PyArrayObject* arr = reinterpret_cast<PyArrayObject*>(pyobj);                                \
                                                                                                    \
       /* TODO: flattening the array here seems to be the only workable solution */                 \
       npy_intp* dims = PyArray_DIMS(arr);                                                          \
@@ -606,12 +609,12 @@ namespace {
       cpptype* raw = static_cast<cpptype*>(PyArray_DATA(arr));                                     \
       vec->reserve(total);                                                                         \
       vec->insert(vec->end(), raw, raw + total);                                                   \
-    } else if (PyList_Check((PyObject*)pyobj)) {                                                   \
-      Py_ssize_t total = PyList_Size((PyObject*)pyobj);                                            \
+    } else if (PyList_Check(reinterpret_cast<PyObject*>(pyobj))) {                                 \
+      Py_ssize_t total = PyList_Size(reinterpret_cast<PyObject*>(pyobj));                          \
       vec->reserve(total);                                                                         \
       for (Py_ssize_t i = 0; i < total; ++i) {                                                     \
-        PyObject* item = PyList_GetItem((PyObject*)pyobj, i);                                      \
-        vec->push_back((cpptype)frompy(item));                                                     \
+        PyObject* item = PyList_GetItem(reinterpret_cast<PyObject*>(pyobj), i);                    \
+        vec->push_back(static_cast<cpptype>(frompy(item)));                                        \
         if (PyErr_Occurred()) {                                                                    \
           PyErr_Clear();                                                                           \
           break;                                                                                   \
@@ -624,7 +627,7 @@ namespace {
       }                                                                                            \
     }                                                                                              \
                                                                                                    \
-    Py_DECREF((PyObject*)pyobj);                                                                   \
+    Py_DECREF(reinterpret_cast<PyObject*>(pyobj));                                                 \
     return vec;                                                                                    \
   }                                                                                                \
                                                                                                    \
@@ -633,8 +636,8 @@ namespace {
     {                                                                                              \
       PyGILRAII gil;                                                                               \
       PyObject* arg0 = wrap_dci(id);                                                               \
-      intptr_t pyres = call((intptr_t)arg0); /* decrefs arg0 */                                    \
-      auto cres = py_to_##name(pyres);       /* decrefs pyres */                                   \
+      intptr_t pyres = call(reinterpret_cast<intptr_t>(arg0)); /* decrefs arg0 */                  \
+      auto cres = py_to_##name(pyres);                         /* decrefs pyres */                 \
       return cres;                                                                                 \
     }                                                                                              \
   };
@@ -674,11 +677,13 @@ static PyObject* parse_args(PyObject* args,
   // any node. (The observer does not require outputs, but they still need to be
   // retrieved, not ignored, to issue an error message if an output is provided.)
 
-  static char const* kwnames[] = {
-    "callable", "input_family", "output_product_suffixes", "concurrency", "name", nullptr};
+  static char kw0[] = "callable", kw1[] = "input_family", kw2[] = "output_product_suffixes",
+              kw3[] = "concurrency", kw4[] = "name";
+  // kwnames can be of type char const*[] once we mandate Python 3.13 or newer
+  static char* kwnames[] = {kw0, kw1, kw2, kw3, kw4, nullptr};
   PyObject *callable = 0, *input = 0, *output = 0, *concurrency = 0, *pyname = 0;
   if (!PyArg_ParseTupleAndKeywords(
-        args, kwds, "OO|OOO", (char**)kwnames, &callable, &input, &output, &concurrency, &pyname)) {
+        args, kwds, "OO|OOO", kwnames, &callable, &input, &output, &concurrency, &pyname)) {
     // error already set by argument parser
     return nullptr;
   }
@@ -1079,22 +1084,22 @@ static PyObject* md_observe(py_phlex_module* mod, PyObject* args, PyObject* kwds
 
 // PyMethodDef arrays must be non-const; tp_methods in PyTypeObject takes a non-const pointer.
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-static PyMethodDef md_methods[] = {{(char*)"transform",
-                                    (PyCFunction)md_transform,
+static PyMethodDef md_methods[] = {{"transform",
+                                    reinterpret_cast<PyCFunction>(md_transform),
                                     METH_VARARGS | METH_KEYWORDS,
-                                    (char*)"register a Python transform"},
-                                   {(char*)"observe",
-                                    (PyCFunction)md_observe,
+                                    "register a Python transform"},
+                                   {"observe",
+                                    reinterpret_cast<PyCFunction>(md_observe),
                                     METH_VARARGS | METH_KEYWORDS,
-                                    (char*)"register a Python observer"},
-                                   {(char*)nullptr, nullptr, 0, nullptr}};
+                                    "register a Python observer"},
+                                   {nullptr, nullptr, 0, nullptr}};
 
 // clang-format off
 // PyType_Ready() modifies PyTypeObject in-place; the Python C API requires non-const.
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 PyTypeObject phlex::experimental::PhlexModule_Type = {
   PyVarObject_HEAD_INIT(&PyType_Type, 0)
-  (char*)"pyphlex.module",       // tp_name
+  "pyphlex.module",              // tp_name
   sizeof(py_phlex_module),       // tp_basicsize
   0,                             // tp_itemsize
   0,                             // tp_dealloc
@@ -1113,7 +1118,7 @@ PyTypeObject phlex::experimental::PhlexModule_Type = {
   0,                             // tp_setattro
   0,                             // tp_as_buffer
   Py_TPFLAGS_DEFAULT,            // tp_flags
-  (char*)"phlex module wrapper", // tp_doc
+  "phlex module wrapper",        // tp_doc
   0,                             // tp_traverse
   0,                             // tp_clear
   0,                             // tp_richcompare
@@ -1168,10 +1173,11 @@ static PyObject* sc_provide(py_phlex_source* src, PyObject* args, PyObject* kwds
   // Register a python algorithm by adding the necessary intermediate converter
   // nodes going from C++ to PyObject* and back.
 
-  static char const* kwnames[] = {"callable", "output_product", "name", nullptr};
+  static char kw0[] = "callable", kw1[] = "output_product", kw2[] = "name";
+  // kwnames can be of type char const*[] once we mandate Python 3.13 or newer
+  static char* kwnames[] = {kw0, kw1, kw2, nullptr};
   PyObject *callable = 0, *output = 0, *pyname = 0;
-  if (!PyArg_ParseTupleAndKeywords(
-        args, kwds, "OO|O", (char**)kwnames, &callable, &output, &pyname)) {
+  if (!PyArg_ParseTupleAndKeywords(args, kwds, "OO|O", kwnames, &callable, &output, &pyname)) {
     // error already set by argument parser
     return nullptr;
   }
@@ -1237,26 +1243,19 @@ static PyObject* sc_provide(py_phlex_source* src, PyObject* args, PyObject* kwds
   // is fixed, so there is no combinatorics problem.
   std::string const& out_type = output_types[0];
   if (out_type == "bool") {
-    auto* pyc = new provider_cb_bool{callable};
-    src->ph_source->provide(functor_name, *pyc).output_product(opq.value());
+    src->ph_source->provide(functor_name, provider_cb_bool{callable}).output_product(opq.value());
   } else if (out_type == "int32_t") {
-    auto* pyc = new provider_cb_int{callable};
-    src->ph_source->provide(functor_name, *pyc).output_product(opq.value());
+    src->ph_source->provide(functor_name, provider_cb_int{callable}).output_product(opq.value());
   } else if (out_type == "uint32_t") {
-    auto* pyc = new provider_cb_uint{callable};
-    src->ph_source->provide(functor_name, *pyc).output_product(opq.value());
+    src->ph_source->provide(functor_name, provider_cb_uint{callable}).output_product(opq.value());
   } else if (out_type == "int64_t") {
-    auto* pyc = new provider_cb_long{callable};
-    src->ph_source->provide(functor_name, *pyc).output_product(opq.value());
+    src->ph_source->provide(functor_name, provider_cb_long{callable}).output_product(opq.value());
   } else if (out_type == "uint64_t") {
-    auto* pyc = new provider_cb_ulong{callable};
-    src->ph_source->provide(functor_name, *pyc).output_product(opq.value());
+    src->ph_source->provide(functor_name, provider_cb_ulong{callable}).output_product(opq.value());
   } else if (out_type == "float") {
-    auto* pyc = new provider_cb_float{callable};
-    src->ph_source->provide(functor_name, *pyc).output_product(opq.value());
+    src->ph_source->provide(functor_name, provider_cb_float{callable}).output_product(opq.value());
   } else if (out_type == "double") {
-    auto* pyc = new provider_cb_double{callable};
-    src->ph_source->provide(functor_name, *pyc).output_product(opq.value());
+    src->ph_source->provide(functor_name, provider_cb_double{callable}).output_product(opq.value());
   } else if (out_type.compare(0, 7, "ndarray") == 0 || out_type.compare(0, 4, "list") == 0) {
     // TODO: just like for input types, these are hard-coded, but should be handled by
     // an IDL instead.
@@ -1266,23 +1265,22 @@ static PyObject* sc_provide(py_phlex_source* src, PyObject* args, PyObject* kwds
       return nullptr;
     }
     if (*dtype == "[int32_t]") {
-      auto* pyc = new provider_cb_vint{callable};
-      src->ph_source->provide(functor_name, *pyc).output_product(opq.value());
+      src->ph_source->provide(functor_name, provider_cb_vint{callable}).output_product(opq.value());
     } else if (*dtype == "[uint32_t]") {
-      auto* pyc = new provider_cb_vuint{callable};
-      src->ph_source->provide(functor_name, *pyc).output_product(opq.value());
+      src->ph_source->provide(functor_name, provider_cb_vuint{callable})
+        .output_product(opq.value());
     } else if (*dtype == "[int64_t]") {
-      auto* pyc = new provider_cb_vlong{callable};
-      src->ph_source->provide(functor_name, *pyc).output_product(opq.value());
+      src->ph_source->provide(functor_name, provider_cb_vlong{callable})
+        .output_product(opq.value());
     } else if (*dtype == "[uint64_t]") {
-      auto* pyc = new provider_cb_vulong{callable};
-      src->ph_source->provide(functor_name, *pyc).output_product(opq.value());
+      src->ph_source->provide(functor_name, provider_cb_vulong{callable})
+        .output_product(opq.value());
     } else if (*dtype == "[float]") {
-      auto* pyc = new provider_cb_vfloat{callable};
-      src->ph_source->provide(functor_name, *pyc).output_product(opq.value());
+      src->ph_source->provide(functor_name, provider_cb_vfloat{callable})
+        .output_product(opq.value());
     } else if (*dtype == "[double]") {
-      auto* pyc = new provider_cb_vdouble{callable};
-      src->ph_source->provide(functor_name, *pyc).output_product(opq.value());
+      src->ph_source->provide(functor_name, provider_cb_vdouble{callable})
+        .output_product(opq.value());
     } else {
       PyErr_Format(PyExc_TypeError, "unsupported collection output type \"%s\"", out_type.c_str());
       return nullptr;
@@ -1297,18 +1295,18 @@ static PyObject* sc_provide(py_phlex_source* src, PyObject* args, PyObject* kwds
 
 // PyMethodDef arrays must be non-const; tp_methods in PyTypeObject takes a non-const pointer.
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-static PyMethodDef sc_methods[] = {{(char*)"provide",
-                                    (PyCFunction)sc_provide,
+static PyMethodDef sc_methods[] = {{"provide",
+                                    reinterpret_cast<PyCFunction>(sc_provide),
                                     METH_VARARGS | METH_KEYWORDS,
-                                    (char*)"register a Python provider"},
-                                   {(char*)nullptr, nullptr, 0, nullptr}};
+                                    "register a Python provider"},
+                                   {nullptr, nullptr, 0, nullptr}};
 
 // clang-format off
 // PyType_Ready() modifies PyTypeObject in-place; the Python C API requires non-const.
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 PyTypeObject phlex::experimental::PhlexSource_Type = {
   PyVarObject_HEAD_INIT(&PyType_Type, 0)
-  (char*)"pyphlex.source",       // tp_name
+  "pyphlex.source",              // tp_name
   sizeof(py_phlex_source),       // tp_basicsize
   0,                             // tp_itemsize
   0,                             // tp_dealloc
@@ -1327,7 +1325,7 @@ PyTypeObject phlex::experimental::PhlexSource_Type = {
   0,                             // tp_setattro
   0,                             // tp_as_buffer
   Py_TPFLAGS_DEFAULT,            // tp_flags
-  (char*)"phlex source wrapper", // tp_doc
+  "phlex source wrapper",        // tp_doc
   0,                             // tp_traverse
   0,                             // tp_clear
   0,                             // tp_richcompare

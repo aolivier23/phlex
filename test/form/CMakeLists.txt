@@ -3,6 +3,11 @@
 if(FORM_USE_ROOT_STORAGE)
   add_subdirectory(data_products)
 
+  find_package(ROOT REQUIRED COMPONENTS Core)
+  add_library(form_test_utils INTERFACE)
+  target_link_libraries(form_test_utils INTERFACE ROOT::Core)
+  target_include_directories(form_test_utils INTERFACE ${PROJECT_SOURCE_DIR})
+
   list(APPEND FORM_TEST_TECHNOLOGIES "ROOT_TTREE")
   if(FORM_USE_RNTUPLE_STORAGE)
     list(APPEND FORM_TEST_TECHNOLOGIES "ROOT_RNTUPLE")
@@ -17,6 +22,7 @@ if(FORM_USE_ROOT_STORAGE)
         LIBRARIES
         form
         form_test_data_products
+        form_test_utils
         TEST_ARGS
         "${CMAKE_CURRENT_BINARY_DIR}/toy.root"
         "${CMAKE_CURRENT_BINARY_DIR}/toy_checksums.txt"
@@ -31,6 +37,7 @@ if(FORM_USE_ROOT_STORAGE)
         LIBRARIES
         form
         form_test_data_products
+        form_test_utils
         TEST_ARGS
         "${CMAKE_CURRENT_BINARY_DIR}/toy.root"
         "${CMAKE_CURRENT_BINARY_DIR}/toy_checksums.txt"
@@ -49,6 +56,7 @@ if(FORM_USE_ROOT_STORAGE)
         LIBRARIES
         form
         form_test_data_products
+        form_test_utils
         TEST_WORKDIR
         form_root_schema_test
         TEST_ARGS
@@ -63,6 +71,7 @@ if(FORM_USE_ROOT_STORAGE)
        LIBRARIES
        form
        form_test_data_products_schema_evolution
+       form_test_utils
        DIRTY_WORKDIR
        TEST_WORKDIR
        form_root_schema_test
@@ -127,6 +136,7 @@ target_include_directories(form_basics_test PRIVATE ${PROJECT_SOURCE_DIR}/form)
 cet_test(form_storage_test USE_CATCH2_MAIN SOURCE form_storage_test.cpp LIBRARIES
          root_storage
          storage
+         form_test_utils
 )
 target_include_directories(form_storage_test PRIVATE ${PROJECT_SOURCE_DIR}/form)
 

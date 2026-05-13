@@ -7,17 +7,17 @@
 #include "test_utils.hpp"
 
 #include <cmath>
+#include <format>
 #include <fstream>
 #include <map>
+#include <memory>
 #include <sstream>
-#include <utility> // for std::ignore
+#include <utility>
 #include <vector>
 
 static int const NUMBER_EVENT = 4;
 static int const NUMBER_SEGMENT = 15;
 
-static char const* const evt_id = "[EVENT=%08X]";
-static char const* const seg_id = "[EVENT=%08X;SEG=%08X]";
 static float const TOLERANCE = 1e-3f;
 
 // Structs to hold expected checksums
@@ -54,12 +54,12 @@ int main(int argc, char** argv)
     std::string type;
     iss >> type;
     if (type == "SEG") {
-      SegChecksum cs;
+      SegChecksum cs{};
       int nevent{}, nseg{};
       iss >> nevent >> nseg >> cs.check >> cs.cpx >> cs.cpy >> cs.cpz;
       expected_seg[{nevent, nseg}] = cs;
     } else if (type == "EVT") {
-      EvtChecksum cs;
+      EvtChecksum cs{};
       int nevent{};
       iss >> nevent >> cs.check;
       expected_evt[nevent] = cs;
@@ -83,40 +83,39 @@ int main(int argc, char** argv)
   for (int nevent = 0; nevent < NUMBER_EVENT; nevent++) {
     std::cout << "PHLEX: Read Event No. " << nevent << '\n';
 
-    std::vector<float> const* track_x = nullptr;
+    std::unique_ptr<std::vector<float> const> track_x;
 
     for (int nseg = 0; nseg < NUMBER_SEGMENT; nseg++) {
 
-      std::vector<float> const* track_start_x = nullptr;
-      char seg_id_text[64];
-      std::ignore = snprintf(seg_id_text, 64, seg_id, nevent, nseg);
+      void const* rawPtr = nullptr;
+      std::string const seg_id_text = std::format("[EVENT={:08X};SEG={:08X}]", nevent, nseg);
 
-      std::string segment_id(seg_id_text);
+      std::string const& segment_id = seg_id_text;
 
       std::string const creator = "Toy_Tracker";
 
       form::experimental::product_with_name pb = {
-        "trackStart", track_start_x, &typeid(std::vector<float>)};
+        "trackStart", rawPtr, &typeid(std::vector<float>)};
 
       form.read(creator, segment_id, pb);
-      track_start_x =
-        static_cast<std::vector<float> const*>(pb.data); //FIXME: Can this be done by FORM?
+      std::unique_ptr<std::vector<float> const> track_start_x(
+        static_cast<std::vector<float> const*>(pb.data));
 
-      std::vector<int> const* track_n_hits = nullptr;
-
+      rawPtr = nullptr;
       form::experimental::product_with_name pb_int = {
-        "trackNumberHits", track_n_hits, &typeid(std::vector<int>)};
+        "trackNumberHits", rawPtr, &typeid(std::vector<int>)};
 
       form.read(creator, segment_id, pb_int);
-      track_n_hits = static_cast<std::vector<int> const*>(pb_int.data);
+      std::unique_ptr<std::vector<int> const> track_n_hits(
+        static_cast<std::vector<int> const*>(pb_int.data));
 
-      std::vector<TrackStart> const* start_points = nullptr;
-
+      rawPtr = nullptr;
       form::experimental::product_with_name pb_points = {
-        "trackStartPoints", start_points, &typeid(std::vector<TrackStart>)};
+        "trackStartPoints", rawPtr, &typeid(std::vector<TrackStart>)};
 
       form.read(creator, segment_id, pb_points);
-      start_points = static_cast<std::vector<TrackStart> const*>(pb_points.data);
+      std::unique_ptr<std::vector<TrackStart> const> start_points(
+        static_cast<std::vector<TrackStart> const*>(pb_points.data));
 
       float check = 0.0;
       for (float val : *track_start_x)
@@ -154,25 +153,21 @@ int main(int argc, char** argv)
                   << '\n';
         all_passed = false;
       }
-
-      delete track_start_x;
-      delete track_n_hits;
-      delete start_points;
     }
     std::cout << "PHLEX: Read Event segments done " << nevent << '\n';
 
-    char evt_id_text[64];
-    std::ignore = snprintf(evt_id_text, 64, evt_id, nevent);
+    std::string const evt_id_text = std::format("[EVENT={:08X}]", nevent);
 
-    std::string event_id(evt_id_text);
+    std::string const& event_id = evt_id_text;
 
     std::string const creator = "Toy_Tracker_Event";
 
+    void const* rawEvtPtr = nullptr;
     form::experimental::product_with_name pb = {
-      "trackStartX", track_x, &typeid(std::vector<float>)};
+      "trackStartX", rawEvtPtr, &typeid(std::vector<float>)};
 
     form.read(creator, event_id, pb);
-    track_x = static_cast<std::vector<float> const*>(pb.data); //FIXME: Can this be done by FORM?
+    track_x.reset(static_cast<std::vector<float> const*>(pb.data));
 
     float check = 0.0;
     for (float val : *track_x)
@@ -195,8 +190,6 @@ int main(int argc, char** argv)
       std::cerr << "VERIFY FAIL: no expected checksum for event=" << nevent << '\n';
       all_passed = false;
     }
-
-    delete track_x; //FIXME: PHLEX owns this memory!
 
     std::cout << "PHLEX: Read Event done " << nevent << '\n';
   }

@@ -9,17 +9,15 @@
 
 #include <cstdlib>
 #include <ctime>
+#include <format>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <utility> // for std::ignore
+#include <ranges>
 #include <vector>
 
 static int const NUMBER_EVENT = 4;
 static int const NUMBER_SEGMENT = 15;
-
-static char const* const evt_id = "[EVENT=%08X]";
-static char const* const seg_id = "[EVENT=%08X;SEG=%08X]";
 
 void generate(std::vector<float>& vrand, int size)
 {
@@ -88,10 +86,9 @@ int main(int argc, char** argv)
       for (float val : track_start_x)
         check += val;
 
-      char seg_id_text[64];
-      std::ignore = snprintf(seg_id_text, 64, seg_id, nevent, nseg);
+      std::string const seg_id_text = std::format("[EVENT={:08X};SEG={:08X}]", nevent, nseg);
 
-      std::string segment_id(seg_id_text);
+      std::string const& segment_id = seg_id_text;
 
       std::vector<form::experimental::product_with_name> products;
       std::string const creator = "Toy_Tracker";
@@ -100,10 +97,7 @@ int main(int argc, char** argv)
         "trackStart", &track_start_x, &typeid(std::vector<float>)};
       products.push_back(pb);
 
-      std::vector<int> track_n_hits;
-      for (int i = 0; i < 100; ++i) {
-        track_n_hits.push_back(i);
-      }
+      std::vector<int> track_n_hits(std::from_range, std::views::iota(0, 100));
       for (int val : track_n_hits)
         check += static_cast<float>(val);
       std::cout << "PHLEX: Segment = " << nseg << ": seg_id_text = " << seg_id_text
@@ -139,10 +133,9 @@ int main(int argc, char** argv)
     for (float val : track_x)
       check += val;
 
-    char evt_id_text[64];
-    std::ignore = snprintf(evt_id_text, 64, evt_id, nevent);
+    std::string const evt_id_text = std::format("[EVENT={:08X}]", nevent);
 
-    std::string event_id(evt_id_text);
+    std::string const& event_id = evt_id_text;
 
     std::string const creator = "Toy_Tracker_Event";
 
