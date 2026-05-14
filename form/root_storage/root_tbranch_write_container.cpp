@@ -58,14 +58,18 @@ void ROOT_TBranch_Write_ContainerImp::setupWrite(std::type_info const& type)
   //Type name conversion based on https://root.cern.ch/doc/master/classTTree.html#ac1fa9466ce018d4aa739b357f981c615
   //An empty leaf list (i.e. for a type not in this map) defaults to Float_t; this is intentional.
   static std::unordered_map<std::string, std::string> typeNameToLeafList = {
+    {"char", "/B"},
+    {"unsigned char", "/b"},
     {"int", "/I"},
     {"unsigned int", "/i"},
     {"float", "/F"},
     {"double", "/D"},
-    {"short int", "/S"},
+    {"short", "/S"},
     {"unsigned short", "/s"},
-    {"long int", "/L"},
-    {"unsigned long int", "/l"},
+    {"long", "/G"},
+    {"unsigned long", "/g"},
+    {"long long", "/L"},
+    {"unsigned long long", "/l"},
     {"bool", "/O"}};
 
   if (m_tree == nullptr) {
