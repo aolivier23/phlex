@@ -55,6 +55,7 @@ if(FORM_USE_ROOT_STORAGE)
         toy_tracker.cpp
         LIBRARIES
         form
+        root_storage
         form_test_data_products
         form_test_utils
         TEST_WORKDIR
@@ -62,7 +63,10 @@ if(FORM_USE_ROOT_STORAGE)
         TEST_ARGS
         ${TECH}
     )
-    target_include_directories("form_root_schema_write_test_${TECH}" PRIVATE ${PROJECT_SOURCE_DIR}/form)
+    target_include_directories(
+      "form_root_schema_write_test_${TECH}"
+      PRIVATE ${PROJECT_SOURCE_DIR}/form
+    )
 
     cet_test(
        "form_root_schema_read_test_${TECH}"
@@ -70,6 +74,7 @@ if(FORM_USE_ROOT_STORAGE)
        form_root_schema_read_test.cpp
        LIBRARIES
        form
+       root_storage
        form_test_data_products_schema_evolution
        form_test_utils
        DIRTY_WORKDIR
@@ -80,7 +85,10 @@ if(FORM_USE_ROOT_STORAGE)
        TEST_ARGS
        ${TECH}
     )
-    target_include_directories("form_root_schema_read_test_${TECH}" PRIVATE ${PROJECT_SOURCE_DIR}/form)
+    target_include_directories(
+      "form_root_schema_read_test_${TECH}"
+      PRIVATE ${PROJECT_SOURCE_DIR}/form
+    )
 
     cet_test(
       "check_root_schema_evolution_${TECH}"
@@ -99,6 +107,16 @@ if(FORM_USE_ROOT_STORAGE)
       "form_root_schema_write_test_${TECH}"
       "form_root_schema_read_test_${TECH}"
     )
+
+    cet_test("form_storage_test_${TECH}" USE_CATCH2_MAIN SOURCE form_storage_test.cpp LIBRARIES
+             root_storage
+             storage
+             form_test_utils
+             TEST_ARGS
+             --technology
+             ${TECH}
+    )
+    target_include_directories("form_storage_test_${TECH}" PRIVATE ${PROJECT_SOURCE_DIR}/form)
   endforeach()
 endif()
 
@@ -132,13 +150,6 @@ cet_test(form_basics_test USE_CATCH2_MAIN SOURCE form_basics_test.cpp LIBRARIES
          form
 )
 target_include_directories(form_basics_test PRIVATE ${PROJECT_SOURCE_DIR}/form)
-
-cet_test(form_storage_test USE_CATCH2_MAIN SOURCE form_storage_test.cpp LIBRARIES
-         root_storage
-         storage
-         form_test_utils
-)
-target_include_directories(form_storage_test PRIVATE ${PROJECT_SOURCE_DIR}/form)
 
 add_library(generate_vector MODULE generate_vector.cpp)
 target_link_libraries(generate_vector PRIVATE phlex::module)

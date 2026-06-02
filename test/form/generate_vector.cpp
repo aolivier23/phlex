@@ -36,7 +36,7 @@ PHLEX_REGISTER_PROVIDERS(graph, config)
 
   graph.make<GaussianGenerator>(n_time_ticks, seed, mean, stddev)
   .provide("random_wires", &GaussianGenerator::operator())
-  .output_product(product_query{.creator = creator, .layer = "event", .suffix = creator});
+  .output_product(phlex::experimental::algorithm_name::create(static_cast<std::string_view>(creator)), phlex::experimental::identifier("event"), creator);
 }
 
 PHLEX_REGISTER_ALGORITHMS(graph, config)
@@ -54,7 +54,7 @@ PHLEX_REGISTER_ALGORITHMS(graph, config)
                     return sum;
                   },
                   concurrency::unlimited)
-                 .input_family(product_query{.creator = lhs_creator, .layer = "event"},
-                               product_query{.creator = rhs_creator, .layer = "event"})
+                 .input_family(product_selector{.creator = lhs_creator, .layer = "event"},
+                               product_selector{.creator = rhs_creator, .layer = "event"})
                  .output_product_suffixes("sums");
 }

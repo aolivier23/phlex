@@ -3,13 +3,13 @@
 #ifndef TEST_FORM_TEST_UTILS_HPP
 #define TEST_FORM_TEST_UTILS_HPP
 
+#include "root_storage/demangle_name.hpp"
 #include "storage/istorage.hpp"
 #include "storage/storage_associative_write_container.hpp"
 #include "storage/storage_read_container.hpp"
 #include "util/factories.hpp"
 
-#include "TClass.h"
-
+#include <cstring>
 #include <iostream>
 #include <memory>
 
@@ -23,13 +23,17 @@ namespace form::test {
   template <class PROD>
   inline std::string getTypeName()
   {
-    return TClass::GetClass<PROD>()->GetName();
+    return DemangleName(typeid(PROD));
   }
 
   template <class PROD>
   inline std::string makeTestBranchName()
   {
-    return std::string(testTreeName) + "/" + getTypeName<PROD>();
+    auto branchName = std::string(testTreeName) + "/" + getTypeName<PROD>();
+    for (size_t firstSpace = branchName.find_first_of(' '); firstSpace != std::string::npos;
+         firstSpace = branchName.find_first_of(' '))
+      branchName = branchName.erase(firstSpace, 1);
+    return branchName;
   }
 
   inline std::vector<std::shared_ptr<IStorage_Write_Container>> doWrite(

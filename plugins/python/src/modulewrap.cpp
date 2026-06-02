@@ -20,7 +20,7 @@
 // Python algorithms are supported by inserting nodes from C++ -> Python,
 // followed by the intended call, and another from Python -> C++.
 //
-// Since product_query inputs, list the creator name, the suffix can remain
+// Since product_selector inputs, list the creator name, the suffix can remain
 // the same throughout the chain (as does the layer), distinguishing the
 // stage with the creator name (and thus the node names) only.
 //
@@ -42,7 +42,7 @@
 using namespace phlex::experimental;
 using namespace phlex;
 using phlex::concurrency;
-using phlex::product_query;
+using phlex::product_selector;
 
 // NOLINTBEGIN(performance-no-int-to-ptr) - necessary for Python interface
 
@@ -85,9 +85,9 @@ namespace {
     return fmt::format("{:n}", v);
   }
 
-  static inline std::string stringify(std::vector<product_query>& v)
+  static inline std::string stringify(std::vector<product_selector>& v)
   {
-    return fmt::format("{:n}", std::ranges::views::transform(v, &product_query::to_string));
+    return fmt::format("{:n}", std::ranges::views::transform(v, &product_selector::to_string));
   }
 
   static inline std::string input_converter_name(std::string const& algname, size_t arg)
@@ -109,7 +109,7 @@ namespace {
   struct py_callback {
     PyObject* m_callable; // owned
 
-    py_callback(PyObject* callable) : m_callable(callable)
+    explicit py_callback(PyObject* callable) : m_callable(callable)
     {
       // callable is always non-null here (validated before py_callback construction)
       PyGILRAII gil;
@@ -203,14 +203,17 @@ namespace {
   // use explicit instatiations to ensure that the function signature can
   // be derived by the graph builder
   struct py_callback_1 : public py_callback<1> {
+    using py_callback<1>::py_callback;
     intptr_t operator()(intptr_t arg0) { return call(arg0); }
   };
 
   struct py_callback_2 : public py_callback<2> {
+    using py_callback<2>::py_callback;
     intptr_t operator()(intptr_t arg0, intptr_t arg1) { return call(arg0, arg1); }
   };
 
   struct py_callback_3 : public py_callback<3> {
+    using py_callback<3>::py_callback;
     intptr_t operator()(intptr_t arg0, intptr_t arg1, intptr_t arg2)
     {
       return call(arg0, arg1, arg2);
@@ -218,18 +221,21 @@ namespace {
   };
 
   struct py_callback_1v : public py_callback<1> {
+    using py_callback<1>::py_callback;
     void operator()(intptr_t arg0) { callv(arg0); }
   };
 
   struct py_callback_2v : public py_callback<2> {
+    using py_callback<2>::py_callback;
     void operator()(intptr_t arg0, intptr_t arg1) { callv(arg0, arg1); }
   };
 
   struct py_callback_3v : public py_callback<3> {
+    using py_callback<3>::py_callback;
     void operator()(intptr_t arg0, intptr_t arg1, intptr_t arg2) { callv(arg0, arg1, arg2); }
   };
 
-  static inline std::optional<product_query> validate_query(PyObject* pyquery)
+  static inline std::optional<product_selector> validate_query(PyObject* pyquery)
   {
     if (!PyDict_Check(pyquery)) {
       PyErr_Format(PyExc_TypeError, "query should be a product specification");
@@ -261,13 +267,13 @@ namespace {
     } else
       PyErr_Clear();
 
-    return std::optional<product_query>{
-      product_query{.creator = identifier(c), .layer = identifier(l), .suffix = s}};
+    return std::optional<product_selector>{
+      product_selector{.creator = identifier(c), .layer = identifier(l), .suffix = s}};
   }
 
-  static std::vector<product_query> validate_input(PyObject* input)
+  static std::vector<product_selector> validate_input(PyObject* input)
   {
-    std::vector<product_query> cargs;
+    std::vector<product_selector> cargs;
     if (!input)
       return cargs;
 
@@ -514,6 +520,7 @@ namespace {
   }                                                                                                \
                                                                                                    \
   struct provider_cb_##name : public py_callback<1> {                                              \
+    using py_callback<1>::py_callback;                                                             \
     cpptype operator()(data_cell_index const& id)                                                  \
     {                                                                                              \
       PyGILRAII gil;                                                                               \
@@ -632,6 +639,7 @@ namespace {
   }                                                                                                \
                                                                                                    \
   struct provider_cb_##name : public py_callback<1> {                                              \
+    using py_callback<1>::py_callback;                                                             \
     std::shared_ptr<std::vector<cpptype>> operator()(data_cell_index const& id)                    \
     {                                                                                              \
       PyGILRAII gil;                                                                               \
@@ -655,7 +663,7 @@ namespace {
   void insert_converter(py_phlex_module* mod,
                         std::string const& name,
                         R (*converter)(Args...),
-                        product_query pq_in,
+                        product_selector pq_in,
                         std::string const& output)
   {
     mod->ph_module->transform(name, converter, concurrency::serial)
@@ -668,7 +676,7 @@ namespace {
 static PyObject* parse_args(PyObject* args,
                             PyObject* kwds,
                             std::string& functor_name,
-                            std::vector<product_query>& input_queries,
+                            std::vector<product_selector>& input_queries,
                             std::vector<std::string>& input_types,
                             std::vector<std::string>& output_suffixes,
                             std::vector<std::string>& output_types)
@@ -681,7 +689,8 @@ static PyObject* parse_args(PyObject* args,
               kw3[] = "concurrency", kw4[] = "name";
   // kwnames can be of type char const*[] once we mandate Python 3.13 or newer
   static char* kwnames[] = {kw0, kw1, kw2, kw3, kw4, nullptr};
-  PyObject *callable = 0, *input = 0, *output = 0, *concurrency = 0, *pyname = 0;
+  PyObject *callable = nullptr, *input = nullptr, *output = nullptr, *concurrency = nullptr,
+           *pyname = nullptr;
   if (!PyArg_ParseTupleAndKeywords(
         args, kwds, "OO|OOO", kwnames, &callable, &input, &output, &concurrency, &pyname)) {
     // error already set by argument parser
@@ -784,7 +793,7 @@ static std::optional<std::string_view> collection_dtype(std::string const& type_
 
 static bool insert_input_converters(py_phlex_module* mod,
                                     std::string const& cname, // TODO: shared_ptr<PyObject>
-                                    std::vector<product_query> const& input_queries,
+                                    std::vector<product_selector> const& input_queries,
                                     std::vector<std::string> const& input_types)
 {
   // insert input converter nodes into the graph
@@ -847,7 +856,7 @@ static bool insert_input_converters(py_phlex_module* mod,
 
 static bool insert_output_converter(py_phlex_module* mod,
                                     std::string const& cname,
-                                    product_query const& out_pq,
+                                    product_selector const& out_pq,
                                     std::string const& out_type,
                                     std::string const& output)
 {
@@ -904,7 +913,7 @@ static PyObject* md_transform(py_phlex_module* mod, PyObject* args, PyObject* kw
   // nodes going from C++ to PyObject* and back.
 
   std::string cname;
-  std::vector<product_query> input_queries;
+  std::vector<product_selector> input_queries;
   std::vector<std::string> input_types, output_suffixes, output_types;
   PyObject* callable =
     parse_args(args, kwds, cname, input_queries, input_types, output_suffixes, output_types);
@@ -951,8 +960,8 @@ static PyObject* md_transform(py_phlex_module* mod, PyObject* args, PyObject* kw
   switch (input_queries.size()) {
   case 1: {
     mod->ph_module->transform(pyname, py_callback_1{callable}, concurrency::serial)
-      .input_family(
-        product_query{.creator = identifier(c0), .layer = pq0.layer, .suffix = identifier(suff0)})
+      .input_family(product_selector{
+        .creator = identifier(c0), .layer = pq0.layer, .suffix = identifier(suff0)})
       .output_product_suffixes(pyoutput);
     break;
   }
@@ -962,9 +971,11 @@ static PyObject* md_transform(py_phlex_module* mod, PyObject* args, PyObject* kw
     std::string suff1 =
       "py_" + (pq1.suffix ? std::string{static_cast<std::string_view>(*pq1.suffix)} : "");
     mod->ph_module->transform(pyname, py_callback_2{callable}, concurrency::serial)
-      .input_family(
-        product_query{.creator = identifier(c0), .layer = pq0.layer, .suffix = identifier(suff0)},
-        product_query{.creator = identifier(c1), .layer = pq1.layer, .suffix = identifier(suff1)})
+      .input_family(product_selector{.creator = identifier(c0),
+                                     .layer = pq0.layer,
+                                     .suffix = identifier(suff0)},
+                    product_selector{
+                      .creator = identifier(c1), .layer = pq1.layer, .suffix = identifier(suff1)})
       .output_product_suffixes(pyoutput);
     break;
   }
@@ -978,10 +989,13 @@ static PyObject* md_transform(py_phlex_module* mod, PyObject* args, PyObject* kw
     std::string suff2 =
       "py_" + (pq2.suffix ? std::string{static_cast<std::string_view>(*pq2.suffix)} : "");
     mod->ph_module->transform(pyname, py_callback_3{callable}, concurrency::serial)
-      .input_family(
-        product_query{.creator = identifier(c0), .layer = pq0.layer, .suffix = identifier(suff0)},
-        product_query{.creator = identifier(c1), .layer = pq1.layer, .suffix = identifier(suff1)},
-        product_query{.creator = identifier(c2), .layer = pq2.layer, .suffix = identifier(suff2)})
+      .input_family(product_selector{.creator = identifier(c0),
+                                     .layer = pq0.layer,
+                                     .suffix = identifier(suff0)},
+                    product_selector{
+                      .creator = identifier(c1), .layer = pq1.layer, .suffix = identifier(suff1)},
+                    product_selector{
+                      .creator = identifier(c2), .layer = pq2.layer, .suffix = identifier(suff2)})
       .output_product_suffixes(pyoutput);
     break;
   }
@@ -993,9 +1007,9 @@ static PyObject* md_transform(py_phlex_module* mod, PyObject* args, PyObject* kw
   }
 
   // insert output converter node into the graph
-  auto out_pq = product_query{.creator = identifier(pyname),
-                              .layer = identifier(output_layer),
-                              .suffix = identifier(pyoutput)};
+  auto out_pq = product_selector{.creator = identifier(pyname),
+                                 .layer = identifier(output_layer),
+                                 .suffix = identifier(pyoutput)};
   std::string const& out_type = output_types[0];
   std::string const& output = output_suffixes[0];
   if (!insert_output_converter(mod, cname, out_pq, out_type, output)) {
@@ -1013,7 +1027,7 @@ static PyObject* md_observe(py_phlex_module* mod, PyObject* args, PyObject* kwds
   // nodes going from C++ to PyObject* and back.
 
   std::string cname;
-  std::vector<product_query> input_queries;
+  std::vector<product_selector> input_queries;
   std::vector<std::string> input_types, output_suffixes, output_types;
   PyObject* callable =
     parse_args(args, kwds, cname, input_queries, input_types, output_suffixes, output_types);
@@ -1040,8 +1054,8 @@ static PyObject* md_observe(py_phlex_module* mod, PyObject* args, PyObject* kwds
   switch (input_queries.size()) {
   case 1: {
     mod->ph_module->observe(cname, py_callback_1v{callable}, concurrency::serial)
-      .input_family(
-        product_query{.creator = identifier(c0), .layer = pq0.layer, .suffix = identifier(suff0)});
+      .input_family(product_selector{
+        .creator = identifier(c0), .layer = pq0.layer, .suffix = identifier(suff0)});
     break;
   }
   case 2: {
@@ -1050,9 +1064,11 @@ static PyObject* md_observe(py_phlex_module* mod, PyObject* args, PyObject* kwds
     std::string suff1 =
       "py_" + (pq1.suffix ? std::string{static_cast<std::string_view>(*pq1.suffix)} : "");
     mod->ph_module->observe(cname, py_callback_2v{callable}, concurrency::serial)
-      .input_family(
-        product_query{.creator = identifier(c0), .layer = pq0.layer, .suffix = identifier(suff0)},
-        product_query{.creator = identifier(c1), .layer = pq1.layer, .suffix = identifier(suff1)});
+      .input_family(product_selector{.creator = identifier(c0),
+                                     .layer = pq0.layer,
+                                     .suffix = identifier(suff0)},
+                    product_selector{
+                      .creator = identifier(c1), .layer = pq1.layer, .suffix = identifier(suff1)});
     break;
   }
   case 3: {
@@ -1065,10 +1081,13 @@ static PyObject* md_observe(py_phlex_module* mod, PyObject* args, PyObject* kwds
     std::string suff2 =
       "py_" + (pq2.suffix ? std::string{static_cast<std::string_view>(*pq2.suffix)} : "");
     mod->ph_module->observe(cname, py_callback_3v{callable}, concurrency::serial)
-      .input_family(
-        product_query{.creator = identifier(c0), .layer = pq0.layer, .suffix = identifier(suff0)},
-        product_query{.creator = identifier(c1), .layer = pq1.layer, .suffix = identifier(suff1)},
-        product_query{.creator = identifier(c2), .layer = pq2.layer, .suffix = identifier(suff2)});
+      .input_family(product_selector{.creator = identifier(c0),
+                                     .layer = pq0.layer,
+                                     .suffix = identifier(suff0)},
+                    product_selector{
+                      .creator = identifier(c1), .layer = pq1.layer, .suffix = identifier(suff1)},
+                    product_selector{
+                      .creator = identifier(c2), .layer = pq2.layer, .suffix = identifier(suff2)});
     break;
   }
   default: {
@@ -1102,58 +1121,58 @@ PyTypeObject phlex::experimental::PhlexModule_Type = {
   "pyphlex.module",              // tp_name
   sizeof(py_phlex_module),       // tp_basicsize
   0,                             // tp_itemsize
-  0,                             // tp_dealloc
+  nullptr,                       // tp_dealloc
   0,                             // tp_vectorcall_offset / tp_print
-  0,                             // tp_getattr
-  0,                             // tp_setattr
-  0,                             // tp_as_async / tp_compare
-  0,                             // tp_repr
-  0,                             // tp_as_number
-  0,                             // tp_as_sequence
-  0,                             // tp_as_mapping
-  0,                             // tp_hash
-  0,                             // tp_call
-  0,                             // tp_str
-  0,                             // tp_getattro
-  0,                             // tp_setattro
-  0,                             // tp_as_buffer
+  nullptr,                       // tp_getattr
+  nullptr,                       // tp_setattr
+  nullptr,                       // tp_as_async / tp_compare
+  nullptr,                       // tp_repr
+  nullptr,                       // tp_as_number
+  nullptr,                       // tp_as_sequence
+  nullptr,                       // tp_as_mapping
+  nullptr,                       // tp_hash
+  nullptr,                       // tp_call
+  nullptr,                       // tp_str
+  nullptr,                       // tp_getattro
+  nullptr,                       // tp_setattro
+  nullptr,                       // tp_as_buffer
   Py_TPFLAGS_DEFAULT,            // tp_flags
   "phlex module wrapper",        // tp_doc
-  0,                             // tp_traverse
-  0,                             // tp_clear
-  0,                             // tp_richcompare
+  nullptr,                       // tp_traverse
+  nullptr,                       // tp_clear
+  nullptr,                       // tp_richcompare
   0,                             // tp_weaklistoffset
-  0,                             // tp_iter
-  0,                             // tp_iternext
+  nullptr,                       // tp_iter
+  nullptr,                       // tp_iternext
   md_methods,                    // tp_methods
-  0,                             // tp_members
-  0,                             // tp_getset
-  0,                             // tp_base
-  0,                             // tp_dict
-  0,                             // tp_descr_get
-  0,                             // tp_descr_set
+  nullptr,                       // tp_members
+  nullptr,                       // tp_getset
+  nullptr,                       // tp_base
+  nullptr,                       // tp_dict
+  nullptr,                       // tp_descr_get
+  nullptr,                       // tp_descr_set
   0,                             // tp_dictoffset
-  0,                             // tp_init
-  0,                             // tp_alloc
-  0,                             // tp_new
-  0,                             // tp_free
-  0,                             // tp_is_gc
-  0,                             // tp_bases
-  0,                             // tp_mro
-  0,                             // tp_cache
-  0,                             // tp_subclasses
-  0                              // tp_weaklist
+  nullptr,                       // tp_init
+  nullptr,                       // tp_alloc
+  nullptr,                       // tp_new
+  nullptr,                       // tp_free
+  nullptr,                       // tp_is_gc
+  nullptr,                       // tp_bases
+  nullptr,                       // tp_mro
+  nullptr,                       // tp_cache
+  nullptr,                       // tp_subclasses
+  nullptr                        // tp_weaklist
 #if PY_VERSION_HEX >= 0x02030000
-  , 0                            // tp_del
+  , nullptr                      // tp_del
 #endif
 #if PY_VERSION_HEX >= 0x02060000
   , 0                            // tp_version_tag
 #endif
 #if PY_VERSION_HEX >= 0x03040000
-  , 0                            // tp_finalize
+  , nullptr                      // tp_finalize
 #endif
 #if PY_VERSION_HEX >= 0x03080000
-  , 0                            // tp_vectorcall
+  , nullptr                      // tp_vectorcall
 #endif
 #if PY_VERSION_HEX >= 0x030c0000
   , 0                            // tp_watched
@@ -1176,7 +1195,7 @@ static PyObject* sc_provide(py_phlex_source* src, PyObject* args, PyObject* kwds
   static char kw0[] = "callable", kw1[] = "output_product", kw2[] = "name";
   // kwnames can be of type char const*[] once we mandate Python 3.13 or newer
   static char* kwnames[] = {kw0, kw1, kw2, nullptr};
-  PyObject *callable = 0, *output = 0, *pyname = 0;
+  PyObject *callable = nullptr, *output = nullptr, *pyname = nullptr;
   if (!PyArg_ParseTupleAndKeywords(args, kwds, "OO|O", kwnames, &callable, &output, &pyname)) {
     // error already set by argument parser
     return nullptr;
@@ -1229,12 +1248,17 @@ static PyObject* sc_provide(py_phlex_source* src, PyObject* args, PyObject* kwds
     PyErr_Clear();
   }
 
-  // translate and validate the output query
+  // translate and validate the output "query"
+  // Since a query in Python is just a dictionary, it isn't called out in the user API as a query
   auto opq = validate_query(output);
   if (!opq.has_value()) {
     // validate_query has set a python exception with details about the error
     return nullptr;
   }
+
+  algorithm_name creator = algorithm_name::create(std::string_view(*opq.value().creator));
+  identifier layer = opq.value().layer;
+  identifier suffix = opq.value().suffix.value_or("");
 
   // insert provider node (TODO: as in transform and observe, we'll leak the
   // callable for now, until there's a proper shutdown procedure)
@@ -1243,19 +1267,26 @@ static PyObject* sc_provide(py_phlex_source* src, PyObject* args, PyObject* kwds
   // is fixed, so there is no combinatorics problem.
   std::string const& out_type = output_types[0];
   if (out_type == "bool") {
-    src->ph_source->provide(functor_name, provider_cb_bool{callable}).output_product(opq.value());
+    src->ph_source->provide(functor_name, provider_cb_bool{callable})
+      .output_product(creator, suffix, layer);
   } else if (out_type == "int32_t") {
-    src->ph_source->provide(functor_name, provider_cb_int{callable}).output_product(opq.value());
+    src->ph_source->provide(functor_name, provider_cb_int{callable})
+      .output_product(creator, suffix, layer);
   } else if (out_type == "uint32_t") {
-    src->ph_source->provide(functor_name, provider_cb_uint{callable}).output_product(opq.value());
+    src->ph_source->provide(functor_name, provider_cb_uint{callable})
+      .output_product(creator, suffix, layer);
   } else if (out_type == "int64_t") {
-    src->ph_source->provide(functor_name, provider_cb_long{callable}).output_product(opq.value());
+    src->ph_source->provide(functor_name, provider_cb_long{callable})
+      .output_product(creator, suffix, layer);
   } else if (out_type == "uint64_t") {
-    src->ph_source->provide(functor_name, provider_cb_ulong{callable}).output_product(opq.value());
+    src->ph_source->provide(functor_name, provider_cb_ulong{callable})
+      .output_product(creator, suffix, layer);
   } else if (out_type == "float") {
-    src->ph_source->provide(functor_name, provider_cb_float{callable}).output_product(opq.value());
+    src->ph_source->provide(functor_name, provider_cb_float{callable})
+      .output_product(creator, suffix, layer);
   } else if (out_type == "double") {
-    src->ph_source->provide(functor_name, provider_cb_double{callable}).output_product(opq.value());
+    src->ph_source->provide(functor_name, provider_cb_double{callable})
+      .output_product(creator, suffix, layer);
   } else if (out_type.compare(0, 7, "ndarray") == 0 || out_type.compare(0, 4, "list") == 0) {
     // TODO: just like for input types, these are hard-coded, but should be handled by
     // an IDL instead.
@@ -1265,22 +1296,23 @@ static PyObject* sc_provide(py_phlex_source* src, PyObject* args, PyObject* kwds
       return nullptr;
     }
     if (*dtype == "[int32_t]") {
-      src->ph_source->provide(functor_name, provider_cb_vint{callable}).output_product(opq.value());
+      src->ph_source->provide(functor_name, provider_cb_vint{callable})
+        .output_product(creator, suffix, layer);
     } else if (*dtype == "[uint32_t]") {
       src->ph_source->provide(functor_name, provider_cb_vuint{callable})
-        .output_product(opq.value());
+        .output_product(creator, suffix, layer);
     } else if (*dtype == "[int64_t]") {
       src->ph_source->provide(functor_name, provider_cb_vlong{callable})
-        .output_product(opq.value());
+        .output_product(creator, suffix, layer);
     } else if (*dtype == "[uint64_t]") {
       src->ph_source->provide(functor_name, provider_cb_vulong{callable})
-        .output_product(opq.value());
+        .output_product(creator, suffix, layer);
     } else if (*dtype == "[float]") {
       src->ph_source->provide(functor_name, provider_cb_vfloat{callable})
-        .output_product(opq.value());
+        .output_product(creator, suffix, layer);
     } else if (*dtype == "[double]") {
       src->ph_source->provide(functor_name, provider_cb_vdouble{callable})
-        .output_product(opq.value());
+        .output_product(creator, suffix, layer);
     } else {
       PyErr_Format(PyExc_TypeError, "unsupported collection output type \"%s\"", out_type.c_str());
       return nullptr;
@@ -1309,58 +1341,58 @@ PyTypeObject phlex::experimental::PhlexSource_Type = {
   "pyphlex.source",              // tp_name
   sizeof(py_phlex_source),       // tp_basicsize
   0,                             // tp_itemsize
-  0,                             // tp_dealloc
+  nullptr,                       // tp_dealloc
   0,                             // tp_vectorcall_offset / tp_print
-  0,                             // tp_getattr
-  0,                             // tp_setattr
-  0,                             // tp_as_async / tp_compare
-  0,                             // tp_repr
-  0,                             // tp_as_number
-  0,                             // tp_as_sequence
-  0,                             // tp_as_mapping
-  0,                             // tp_hash
-  0,                             // tp_call
-  0,                             // tp_str
-  0,                             // tp_getattro
-  0,                             // tp_setattro
-  0,                             // tp_as_buffer
+  nullptr,                       // tp_getattr
+  nullptr,                       // tp_setattr
+  nullptr,                       // tp_as_async / tp_compare
+  nullptr,                       // tp_repr
+  nullptr,                       // tp_as_number
+  nullptr,                       // tp_as_sequence
+  nullptr,                       // tp_as_mapping
+  nullptr,                       // tp_hash
+  nullptr,                       // tp_call
+  nullptr,                       // tp_str
+  nullptr,                       // tp_getattro
+  nullptr,                       // tp_setattro
+  nullptr,                       // tp_as_buffer
   Py_TPFLAGS_DEFAULT,            // tp_flags
   "phlex source wrapper",        // tp_doc
-  0,                             // tp_traverse
-  0,                             // tp_clear
-  0,                             // tp_richcompare
+  nullptr,                       // tp_traverse
+  nullptr,                       // tp_clear
+  nullptr,                       // tp_richcompare
   0,                             // tp_weaklistoffset
-  0,                             // tp_iter
-  0,                             // tp_iternext
+  nullptr,                       // tp_iter
+  nullptr,                       // tp_iternext
   sc_methods,                    // tp_methods
-  0,                             // tp_members
-  0,                             // tp_getset
-  0,                             // tp_base
-  0,                             // tp_dict
-  0,                             // tp_descr_get
-  0,                             // tp_descr_set
+  nullptr,                       // tp_members
+  nullptr,                       // tp_getset
+  nullptr,                       // tp_base
+  nullptr,                       // tp_dict
+  nullptr,                       // tp_descr_get
+  nullptr,                       // tp_descr_set
   0,                             // tp_dictoffset
-  0,                             // tp_init
-  0,                             // tp_alloc
-  0,                             // tp_new
-  0,                             // tp_free
-  0,                             // tp_is_gc
-  0,                             // tp_bases
-  0,                             // tp_mro
-  0,                             // tp_cache
-  0,                             // tp_subclasses
-  0                              // tp_weaklist
+  nullptr,                       // tp_init
+  nullptr,                       // tp_alloc
+  nullptr,                       // tp_new
+  nullptr,                       // tp_free
+  nullptr,                       // tp_is_gc
+  nullptr,                       // tp_bases
+  nullptr,                       // tp_mro
+  nullptr,                       // tp_cache
+  nullptr,                       // tp_subclasses
+  nullptr                        // tp_weaklist
 #if PY_VERSION_HEX >= 0x02030000
-  , 0                            // tp_del
+  , nullptr                      // tp_del
 #endif
 #if PY_VERSION_HEX >= 0x02060000
   , 0                            // tp_version_tag
 #endif
 #if PY_VERSION_HEX >= 0x03040000
-  , 0                            // tp_finalize
+  , nullptr                      // tp_finalize
 #endif
 #if PY_VERSION_HEX >= 0x03080000
-  , 0                            // tp_vectorcall
+  , nullptr                      // tp_vectorcall
 #endif
 #if PY_VERSION_HEX >= 0x030c0000
   , 0                            // tp_watched

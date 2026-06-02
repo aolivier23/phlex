@@ -58,13 +58,13 @@ namespace {
       // STEP 1: Extract metadata from Phlex's product_store
 
       // Extract creator (algorithm name)
-      auto creator = store.source();
+      auto const& creator = store.source();
 
       // Extract segment ID (partition) - extract once for entire store
       auto segment_id = store.index()->to_string();
 
       std::cout << "\n=== FormOutputModule::save_data_products ===\n";
-      std::cout << "Creator: " << creator.full() << "\n";
+      std::cout << "Creator: " << creator.to_string() << "\n";
       std::cout << "Segment ID: " << segment_id << "\n";
       std::cout << "Number of products: " << store.size() << "\n";
 
@@ -82,7 +82,7 @@ namespace {
         // product_ptr: pointer to the actual product data
         assert(product_ptr && "store should not contain null product_ptr");
 
-        std::cout << "  Product: " << product_spec.full() << "\n";
+        std::cout << "  Product: " << product_spec.to_string() << "\n";
 
         // Create FORM product with metadata
         products.emplace_back(product_spec.suffix().trans_get_string(), // label, from map key
@@ -96,7 +96,7 @@ namespace {
       // Write all products to FORM
       // Pass segment_id once for entire collection (not duplicated in each product)
       // No need to check if products is empty - already checked store.empty() above
-      m_form_interface->write(creator.full(), segment_id, products);
+      m_form_interface->write(creator.to_string(), segment_id, products);
       std::cout << "Wrote " << products.size() << " products to FORM\n";
     }
 
