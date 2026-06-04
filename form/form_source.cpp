@@ -95,8 +95,8 @@ PHLEX_REGISTER_PROVIDERS(s, config)
                 return form_input->read<std::vector<int>>(creator, name, id);
               })
       .output_product(phlex::experimental::algorithm_name::create(creatorToAdvertise),
-                      phlex::experimental::identifier("event"),
-                      phlex::experimental::identifier(name));
+                      phlex::experimental::identifier(name),
+                      phlex::experimental::identifier("event"));
 	  }
 
   std::cout << "FORM input source registered successfully\n";

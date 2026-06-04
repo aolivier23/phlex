@@ -32,11 +32,11 @@ PHLEX_REGISTER_PROVIDERS(graph, config)
   int const n_time_ticks = config.get<int>("n_time_ticks");
   float const mean = config.get<float>("mean", 0);
   float const stddev = config.get<float>("stddev", 1);
-  auto creator = config.get<phlex::experimental::identifier>("creator");
+  auto creator = config.get<std::string>("creator");
 
   graph.make<GaussianGenerator>(n_time_ticks, seed, mean, stddev)
   .provide("random_wires", &GaussianGenerator::operator())
-  .output_product(phlex::experimental::algorithm_name::create(static_cast<std::string_view>(creator)), phlex::experimental::identifier("event"), creator);
+  .output_product(creator, phlex::experimental::identifier(creator), phlex::experimental::identifier("event"));
 }
 
 PHLEX_REGISTER_ALGORITHMS(graph, config)
