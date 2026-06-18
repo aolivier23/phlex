@@ -16,7 +16,7 @@ namespace form::detail::experimental {
   class ROOT_RField_Write_ContainerImp : public Storage_Associative_Write_Container {
   public:
     ROOT_RField_Write_ContainerImp(std::string const& name);
-    ~ROOT_RField_Write_ContainerImp();
+    ~ROOT_RField_Write_ContainerImp() override = default;
 
     void setAttribute(std::string const& key, std::string const& value) override;
 
@@ -25,12 +25,13 @@ namespace form::detail::experimental {
     void setParent(std::shared_ptr<IStorage_Write_Container> const parent) override;
     void fill(void const* data) override;
     void commit() override;
+    std::uint64_t getEntryCount() override;
 
   private:
     std::shared_ptr<TFile> m_tfile;
     std::shared_ptr<ROOT_RNTuple_Write_ContainerImp> m_rntuple_parent;
 
-    bool m_force_streamer_field;
+    bool m_force_streamer_field = false;
   };
 }
 

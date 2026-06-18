@@ -29,6 +29,7 @@ cet_test(type_deduction SOURCE type_deduction.cpp LIBRARIES
          phlex::metaprogramming
 )
 cet_test(type_id USE_CATCH2_MAIN SOURCE type_id.cpp LIBRARIES phlex::model_internal fmt::fmt)
+cet_test(layer_path USE_CATCH2_MAIN SOURCE layer_path.cpp LIBRARIES phlex::model_internal fmt::fmt)
 cet_test(identifier USE_CATCH2_MAIN SOURCE identifier.cpp LIBRARIES phlex::model phlex::configuration Boost::json)
 cet_test(
   yielding_driver
@@ -168,6 +169,9 @@ cet_test(
   phlex::utilities_internal
 )
 cet_test(data_cell_index USE_CATCH2_MAIN SOURCE data_cell_index.cpp LIBRARIES
+         phlex::model_internal
+)
+cet_test(index_generator USE_CATCH2_MAIN SOURCE index_generator.cpp LIBRARIES
          phlex::model_internal
 )
 cet_test(fixed_hierarchy_test USE_CATCH2_MAIN SOURCE fixed_hierarchy_test.cpp LIBRARIES

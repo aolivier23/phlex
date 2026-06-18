@@ -14,7 +14,7 @@ include_directories(${PROJECT_SOURCE_DIR}/form)
 
 # ROOT Storage toggle
 option(FORM_USE_ROOT_STORAGE "Enable ROOT Storage" ON)
-option(FORM_USE_RNTUPLE_STORAGE "Enable RNTuple Storage" ON)
+option(FORM_USE_RNTUPLE_STORAGE "Enable RNTuple Storage" OFF)
 
 # Add sub directories
 add_subdirectory(form)
@@ -31,7 +31,7 @@ target_link_libraries(form_module PRIVATE phlex::module form)
 target_include_directories(form_module PRIVATE ${PROJECT_SOURCE_DIR})
 
 add_library(form_source MODULE form_source.cpp)
-target_link_libraries(form_source PRIVATE phlex::module form)
+target_link_libraries(form_source PRIVATE phlex::source form)
 target_include_directories(form_source PRIVATE ${PROJECT_SOURCE_DIR})
 
 install(TARGETS form_module form_source LIBRARY DESTINATION lib)

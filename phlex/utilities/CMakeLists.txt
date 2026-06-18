@@ -14,8 +14,9 @@ cet_make_library(
 
 install(
   FILES
-    async_driver.hpp
+    resumable_driver.hpp
     hashing.hpp
+    bulleted_list.hpp
     max_allowed_parallelism.hpp
     resource_usage.hpp
     simple_ptr_map.hpp

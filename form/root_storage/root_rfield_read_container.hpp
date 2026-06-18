@@ -14,6 +14,7 @@ namespace ROOT {
   class RNTupleReader;
   template <class FIELD_TYPE>
   class RNTupleView;
+  template <>
   class RNTupleView<void>;
 }
 
@@ -21,9 +22,14 @@ namespace form::detail::experimental {
   class ROOT_RField_Read_ContainerImp : public Storage_Read_Container {
   public:
     ROOT_RField_Read_ContainerImp(std::string const& name);
-    ~ROOT_RField_Read_ContainerImp();
+    ~ROOT_RField_Read_ContainerImp()
+      override; //Must not be defined in header because that requires definition of RNTupleReader, etc.
 
-    void setAttribute(std::string const& key, std::string const& value) override;
+    //Rule of five
+    ROOT_RField_Read_ContainerImp(ROOT_RField_Read_ContainerImp const& other) = delete;
+    ROOT_RField_Read_ContainerImp(ROOT_RField_Read_ContainerImp&& other) = delete;
+    ROOT_RField_Read_ContainerImp& operator=(ROOT_RField_Read_ContainerImp const& other) = delete;
+    ROOT_RField_Read_ContainerImp& operator=(ROOT_RField_Read_ContainerImp&& other) = delete;
 
     void setFile(std::shared_ptr<IStorage_File> file) override;
     bool read(int id, void const** data, std::type_info const& type) override;
@@ -32,8 +38,6 @@ namespace form::detail::experimental {
     std::shared_ptr<TFile> m_tfile;
     std::unique_ptr<ROOT::RNTupleReader> m_reader;
     std::unique_ptr<ROOT::RNTupleView<void>> m_view;
-
-    bool m_force_streamer_field;
   };
 }
 
