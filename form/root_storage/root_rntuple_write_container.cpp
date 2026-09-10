@@ -1,6 +1,7 @@
 //A root_rntuple_write_container_imp is a storage_write_association that coordinates the RNTuple-specific, file-based resources (writer, model, entry) shared by several root_rfield_write_container_imps; it does not itself write a data product (see root_rfield_write_container_imp for the per-field write path).
 
 #include "root_rntuple_write_container.hpp"
+#include "handle_rexception.hpp"
 #include "root_tfile.hpp"
 
 #include "ROOT/RNTupleReader.hxx"
@@ -22,7 +23,7 @@ namespace form::detail::experimental {
       try {
         writer_->CommitDataset();
       } catch (ROOT::RException const& e) {
-        std::cerr << "Failed to commit RNTuple " << name() << " at destruction.\n";
+        handle_rexception("failed to commit RNTuple " + name() + " at destruction", e);
       }
     }
   }
@@ -58,7 +59,11 @@ namespace form::detail::experimental {
         throw std::runtime_error("root_rntuple_write_container_imp::setup_write no file loaded to "
                                  "write to on first fill() call");
       }
-      writer_ = ROOT::RNTupleWriter::Append(std::move(model_), name(), *tfile_);
+      try {
+        writer_ = ROOT::RNTupleWriter::Append(std::move(model_), name(), *tfile_);
+      } catch (ROOT::RException const& e) {
+        handle_rexception("failed to open an RNTuple named " + name () + " from a ROOT file named " + tfile_->GetName(), e);
+      }
     }
 
     return *writer_;
@@ -72,7 +77,11 @@ namespace form::detail::experimental {
   RRawPtrWriteEntry& root_rntuple_write_container_imp::get_entry()
   {
     if (!entry_) {
-      entry_ = get_writer().CreateRawPtrWriteEntry();
+      try {
+        entry_ = get_writer().CreateRawPtrWriteEntry();
+      } catch (ROOT::RException const& e) {
+        handle_rexception("failed to create an RRawPtrWriteEntry from an RNTuple named " + name(), e);
+      }
     }
     return *entry_;
   }

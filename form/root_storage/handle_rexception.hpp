@@ -1,0 +1,10 @@
+#include <string>
+#include <source_location>
+
+namespace ROOT {
+  class RException;
+}
+
+namespace form::detail::experimental {
+  void handle_rexception(std::string const&& messgage, ROOT::RException const& e, std::source_location const loc = std::source_location::current());
+}

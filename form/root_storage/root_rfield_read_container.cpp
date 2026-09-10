@@ -2,6 +2,7 @@
 
 #include "root_rfield_read_container.hpp"
 #include "demangle_name.hpp"
+#include "handle_rexception.hpp"
 #include "root_tfile.hpp"
 
 #include "ROOT/RNTupleReader.hxx"
@@ -72,30 +73,29 @@ namespace form::detail::experimental {
   bool root_rfield_read_container_imp::read(int id, void const** data, std::type_info const& type)
   {
     std::scoped_lock guard(root_rfield_read_mutex());
+    try {
 
-    //Connect to file at the last possible moment at the cost of a little run-time branching
+      //Connect to file at the last possible moment at the cost of a little run-time branching
     if (!view_) {
       create_view(type);
-    }
-
-    if (std::cmp_greater_equal(id, reader_->GetNEntries())) {
-      return false;
-    }
-
-    //Using RNTupleView<> to read instead of reusing REntry gives us full schema evolution support: the ROOT feature that lets us read files with an old class version into a new class version's memory.
-    auto buffer = view_->GetField().CreateObject<void>(); //PHLEX gets ownership of this memory
-    assert(buffer);
-
-    view_->BindRawPtr(buffer.get());
-    try {
+      }
+  
+      if (std::cmp_greater_equal(id, reader_->GetNEntries())) {
+        return false;
+      }
+  
+      //Using RNTupleView<> to read instead of reusing REntry gives us full schema evolution support: the ROOT feature that lets us read files with an old class version into a new class version's memory.
+      auto buffer = view_->GetField().CreateObject<void>(); //PHLEX gets ownership of this memory
+      assert(buffer);
+  
+      view_->BindRawPtr(buffer.get());
       (*view_)(id);
+      *data =
+        buffer.release(); //Ownership transferred to Phlex through Persistence and interface layers.
+      //Any framework using FORM must free this memory.  FORM holds no reference to it.
     } catch (ROOT::RException const& e) {
-      throw std::runtime_error("root_rfield_read_container_imp::read got a ROOT exception: " +
-                               std::string(e.what()));
+      handle_rexception("failed to read from RNTuple", e);
     }
-    *data =
-      buffer.release(); //Ownership transferred to Phlex through Persistence and interface layers.
-    //Any framework using FORM must free this memory.  FORM holds no reference to it.
 
     return true;
   }
@@ -143,10 +143,9 @@ namespace form::detail::experimental {
           !TDictionary::GetDictionary(view_->GetField().GetTypeName().c_str()) ||
           (strcmp(TDictionary::GetDictionary(view_->GetField().GetTypeName().c_str())->GetName(),
                   TDictionary::GetDictionary(type)->GetName()) != 0)) {
-        throw std::runtime_error(
-          "root_rfield_read_container_imp::create_view type " + demangle_name(type) +
-          " requested for a field named " + col_name() +
-          " does not match the type in the file: " + view_->GetField().GetTypeName());
+        handle_rexception("type " + demangle_name(type) +
+                          " requested for a field named " + col_name() +
+                          " does not match the type in the file: " + view_->GetField().GetTypeName(), e);
       }
     }
   }
