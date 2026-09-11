@@ -58,7 +58,11 @@ namespace form::detail::experimental {
     }
 
     if (!reader_) {
-      reader_ = ROOT::RNTupleReader::Open(top_name(), tfile_->GetName());
+      try {
+        reader_ = ROOT::RNTupleReader::Open(top_name(), tfile_->GetName());
+      } catch (ROOT::RException const& e) {
+        handle_rexception("failed to open an RNTuple named " + top_name() + " in a file named " + tfile_->GetName(), e);
+      }
     }
 
     if (!view_) {
@@ -129,7 +133,11 @@ namespace form::detail::experimental {
           "from on first read() call!");
       }
 
-      reader_ = ROOT::RNTupleReader::Open(top_name(), tfile_->GetName());
+      try {
+        reader_ = ROOT::RNTupleReader::Open(top_name(), tfile_->GetName());
+      } catch (ROOT::RException const& e) {
+        handle_rexception("failed to open an RNTuple named " + top_name() + " in a file named " + tfile_->GetName(), e);
+      }
     }
 
     try {
