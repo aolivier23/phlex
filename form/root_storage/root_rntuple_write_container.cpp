@@ -10,6 +10,7 @@
 #include "TFile.h"
 
 #include <exception>
+#include <source_location>
 
 namespace form::detail::experimental {
   root_rntuple_write_container_imp::root_rntuple_write_container_imp(std::string const& name) :
@@ -23,7 +24,9 @@ namespace form::detail::experimental {
       try {
         writer_->CommitDataset();
       } catch (ROOT::RException const& e) {
-        handle_rexception("failed to commit RNTuple " + name() + " at destruction", e);
+        std::cerr << std::source_location::current().function_name() << ": "
+                  << "failed to commit an RNTuple with name " << name() << " in file " << tfile_->GetName() << " when destroying FORM containers because:\n"
+                  << e.what() << "\n";
       }
     }
   }
@@ -62,7 +65,7 @@ namespace form::detail::experimental {
       try {
         writer_ = ROOT::RNTupleWriter::Append(std::move(model_), name(), *tfile_);
       } catch (ROOT::RException const& e) {
-        handle_rexception("failed to open an RNTuple named " + name () + " from a ROOT file named " + tfile_->GetName(), e);
+        handle_rexception("failed to open an RNTuple named " + name() + " from a ROOT file named " + tfile_->GetName(), e);
       }
     }
 
