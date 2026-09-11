@@ -112,7 +112,11 @@ namespace form::detail::experimental {
       if (!tfile_) {
         throw std::runtime_error("root_rfield_read_container_imp::entries No file loaded");
       }
-      reader_ = ROOT::RNTupleReader::Open(top_name(), tfile_->GetName());
+      try {
+        reader_ = ROOT::RNTupleReader::Open(top_name(), tfile_->GetName());
+      } catch (ROOT::RException const& e) {
+        handle_rexception("Failed to open an RNTuple named " + top_name() + " from a file named " + tfile_->GetName(), e);
+      }
     }
 
     if (!view_ &&
