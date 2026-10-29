@@ -85,6 +85,11 @@ namespace form::detail::experimental {
     if (!TDictionary::GetDictionary(type)) {
       throw std::runtime_error("root_rfield_read_container_imp::prime unsupported type");
     }
+
+    auto const class_info = TClass::GetClass(type);
+    if (class_info && !class_info->HasDictionary()) {
+      throw std::runtime_error("root_rfield_read_container_imp::prime cannot read type " + std::string(class_info->GetName()) + " that is missing ROOT dictionary");
+    }
   }
 
   bool root_rfield_read_container_imp::read(int id, void const** data, std::type_info const& type)

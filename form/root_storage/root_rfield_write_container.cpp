@@ -120,6 +120,11 @@ namespace form::detail::experimental {
     auto const& type_name = demangle_name(type);
     std::unique_ptr<ROOT::RFieldBase> field;
 
+    auto const class_info = TClass::GetClass(type);
+    if (class_info && !class_info->HasDictionary()) {
+      throw std::runtime_error("root_rfield_write_container_imp::setup_write Cannot write class " + type_name + " that is missing ROOT dictionary");
+    }
+
     try {
       if (force_streamer_field_) {
         field = std::make_unique<ROOT::RStreamerField>(col_name(), type_name);
