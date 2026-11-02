@@ -85,11 +85,6 @@ namespace form::detail::experimental {
     if (!TDictionary::GetDictionary(type)) {
       throw std::runtime_error("root_rfield_read_container_imp::prime unsupported type");
     }
-
-    auto const class_info = TClass::GetClass(type);
-    if (class_info && !class_info->HasDictionary()) {
-      throw std::runtime_error("root_rfield_read_container_imp::prime cannot read type " + std::string(class_info->GetName()) + " that is missing ROOT dictionary");
-    }
   }
 
   bool root_rfield_read_container_imp::read(std::uint64_t id,
@@ -184,6 +179,11 @@ namespace form::detail::experimental {
             " does not match the type in the file: " + view_->GetField().GetTypeName(),
           e);
       }
+    }
+
+    auto class_info = TClass::GetClass(type);
+    if(view_->GetField().GetStructure() == ROOT::ENTupleStructure::kStreamer && class_info && !class_info->HasDictionary()) {
+      throw std::runtime_error("root_rfield_read_containerimp::create_view(): cannot read a data product of type " + demangle_name(type) + " in streamer mode when that data product is missing either its own dictionary or a dictionary for the STL container that owns it.");
     }
   }
 }
