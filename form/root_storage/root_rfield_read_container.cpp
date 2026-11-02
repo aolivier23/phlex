@@ -180,10 +180,5 @@ namespace form::detail::experimental {
           e);
       }
     }
-
-    auto class_info = TClass::GetClass(type);
-    if(view_->GetField().GetStructure() == ROOT::ENTupleStructure::kStreamer && class_info && !class_info->HasDictionary()) {
-      throw std::runtime_error("root_rfield_read_containerimp::create_view(): cannot read a data product of type " + demangle_name(type) + " in streamer mode when that data product is missing either its own dictionary or a dictionary for the STL container that owns it.");
-    }
   }
 }
