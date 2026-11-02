@@ -117,7 +117,7 @@ void root_tbranch_read_container_imp::prime(std::type_info const& type)
 
   auto const class_info = TClass::GetClass(type);
   if (class_info && !class_info->HasDictionary()) {
-    throw std::runtime_error("root_rfield_read_container_imp::prime cannot read type " + std::string(class_info->GetName()) + " that is missing ROOT dictionary");
+    throw std::runtime_error("root_tbranch_read_container_imp::prime cannot read type " + std::string(class_info->GetName()) + " that is missing ROOT dictionary");
   }
 
   if (!(dict_info->Property() & EProperty::kIsFundamental)) {
